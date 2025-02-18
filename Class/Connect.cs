@@ -15,17 +15,26 @@ namespace ServiceDesk.Class
         private Connect() { }
         private string Inventory => ConfigurationManager.ConnectionStrings["Inventory"].ConnectionString;
         public string ServicedeskConnection => ConfigurationManager.ConnectionStrings["ServiceDesk"].ConnectionString;
-        private async Task UpdateLastActivityAsync(Guid sessionId,SqlConnection connection)
+        private SqlConnection connection { get; set; } = null;
+        private async Task CreateDatabaseConnection()
+        {
+            if (connection == null)
+            {
+                connection = new SqlConnection(ServicedeskConnection);
+            }
+            await connection.OpenAsync();
+        }
+        private async Task UpdateLastActivityAsync(Guid sessionId)
         {
             try
             {
+                if (connection == null)
+                {
+                    await CreateDatabaseConnection();
+                }
                 string query = "UPDATE UserSessions SET LastActivity = GETDATE() WHERE SessionId = @SessionId";
                 using var command = new SqlCommand(query, connection);
                 command.Parameters.AddWithValue("@SessionId", sessionId);
-                if (connection.State != ConnectionState.Open)
-                {
-                    await connection.OpenAsync();
-                }
                 await command.ExecuteNonQueryAsync();
             }
             catch (Exception ex)
@@ -81,13 +90,12 @@ namespace ServiceDesk.Class
                 {
                     return null;
                 }
-                SqlConnection connection =new SqlConnection(ServicedeskConnection);
-                await UpdateLastActivityAsync(sessionId,connection);
+                await UpdateLastActivityAsync(sessionId);
                 return connection;
             }
             catch (Exception ex)
             {
-                Notifications.Error(ex.Message);
+                Notifications.Error(ex.Message, "Error connecting to the server");
                 await Logger.Log("System", $" | Error occurred while running EstablishConnectionWithServiceDesk. | Error: {ex.Message}");
                 return null;
             }
@@ -99,34 +107,33 @@ namespace ServiceDesk.Class
 
             try
             {
-                var connection = new SqlConnection(Inventory);
-                if (connection.State != ConnectionState.Open)
-                {
-                    await connection.OpenAsync();
-                }
-                return connection;
+                var connection_inventory = new SqlConnection(Inventory);
+                return connection_inventory;
             }
             catch (Exception ex)
             {
-                Notifications.Error(ex.Message);
+                Notifications.Error(ex.Message,"Error connecting to the inventory server");
                 await Logger.Log("System", $" | Error is occured while running EstablishConnectionWithInventory. | Error is: {ex.Message}");
                 return null;
             }
         }
-        public SqlConnection LoginToTheServerAsync()
+        public async Task<SqlConnection> LoginWithoutAuthentication()
         {
             try
             {
                 if (!CheckInternetConnection())
                     return null;
                 var connection = new SqlConnection(ServicedeskConnection);
-                connection.Open(); // Async call to prevent UI freezing
                 return connection;
             }
             catch (Exception ex)
             {
-                Notifications.Error(ex.Message);
+                Notifications.Error(ex.Message, "Error connecting to the server without authentication");
                 return null;
+            }
+            finally
+            {
+                await Task.Delay(1);
             }
         }
     }

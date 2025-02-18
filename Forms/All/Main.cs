@@ -30,6 +30,7 @@ namespace ServiceDesk.Forms
         public readonly Guid _sessionId;
         private Timer checkActivityTimer;
         private Form _activeForm = null;
+        private SqlConnection connection { get; set; } = null;
 
         private readonly Dictionary<string, string> _titleForForms = new()
         {
@@ -57,6 +58,14 @@ namespace ServiceDesk.Forms
             };
             checkActivityTimer.Tick += async (sender, e) => await CheckUserActivity();
             checkActivityTimer.Start();
+        }
+        private async Task CreateConnectionWithDatabase()
+        {
+            if (connection == null)
+            {
+                connection = await connect.EstablishConnectionWithServiceDeskAsync(_sessionId).ConfigureAwait(false);
+            }
+            await connection.OpenAsync();
         }
         #region Control Buttons
         private void BtnMinimize_Click(object sender, EventArgs e) => this.WindowState = FormWindowState.Minimized;
@@ -311,9 +320,11 @@ namespace ServiceDesk.Forms
         {
             try
             {
-                using var connection =  connect.LoginToTheServerAsync();
                 string query = @"SELECT IsActive FROM UserSessions WHERE SessionId = @SessionId";
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand(query, connection);
                 cm.Parameters.AddWithValue("@SessionId", _sessionId);
                 using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
@@ -331,8 +342,10 @@ namespace ServiceDesk.Forms
             {
                 try
                 {
-                    using var connection = connect.LoginToTheServerAsync();
-                    if (connection is null) return;
+                    if (connection is null || connection.State == ConnectionState.Closed)
+                    {
+                        await CreateConnectionWithDatabase();
+                    }
                     string query = @"  UPDATE UserSessions 
                                            SET IsActive = 0 
                                            WHERE SessionId = @SessionId;

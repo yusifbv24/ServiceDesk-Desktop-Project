@@ -35,10 +35,11 @@ namespace ServiceDesk.Forms
         }
         private async Task CreateConnectionWithDatabase()
         {
-            if (connection == null||connection.State==ConnectionState.Closed)
+            if (connection == null)
             {
                 connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId).ConfigureAwait(false);
             }
+            await connection.OpenAsync();
         }
         private async Task DoItAll(string date)
         {

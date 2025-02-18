@@ -1,5 +1,6 @@
 ﻿using ServiceDesk.Class;
 using System;
+using System.Data;
 using System.Data.SqlClient;
 using System.Runtime.InteropServices;
 using System.Security.Policy;
@@ -19,6 +20,7 @@ namespace ServiceDesk.Forms
         private readonly string _fullname = default;
         private readonly string key = "c24ca5898a4fjwidjwi2bdsn235a1916";
         private Main _mainMenu;
+        private SqlConnection connection { get; set; } = null;
         private string User_password(string password)
         {
             return Cryptography.EncryptString(key, password);
@@ -30,10 +32,20 @@ namespace ServiceDesk.Forms
             this.KeyPreview = true;
             _mainMenu = mainMenu;
         }
+        private async Task CreateConnectionWithDatabase()
+        {
+            if (connection == null)
+            {
+                connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId).ConfigureAwait(false);
+            }
+            await connection.OpenAsync();
+        }
         private async Task AddingNewUser()
         {
-            using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-            if (connection is null) return;
+            if (connection is null || connection.State == ConnectionState.Closed)
+            {
+                await CreateConnectionWithDatabase();
+            }
             using var cm = new SqlCommand(@"INSERT INTO 
                         Users(fullname,password,type,session,ip_address,csat)
                         VALUES(@fullname,@password,@type,@session,@ip_address,@csat) 
@@ -57,8 +69,10 @@ namespace ServiceDesk.Forms
         }
         private async Task UpdateUser()
         {
-            using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-            if (connection is null) return;
+            if (connection is null || connection.State == ConnectionState.Closed)
+            {
+                await CreateConnectionWithDatabase();
+            }
             using var cm = new SqlCommand("UPDATE Users SET fullname=@fullname,password=@password,type=@type,session=@session,ip_address=@ip_address WHERE ID=@ID", connection);
             cm.Parameters.AddWithValue("@ID", user_ID);
             cm.Parameters.AddWithValue("@fullname", txtFullname.Text);
@@ -75,8 +89,10 @@ namespace ServiceDesk.Forms
         }
         private async Task UpdateUserWithoutChangingPassword()
         {
-            using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-            if (connection is null) return;
+            if (connection is null || connection.State == ConnectionState.Closed)
+            {
+                await CreateConnectionWithDatabase();
+            }
             using var cm = new SqlCommand("UPDATE Users SET fullname=@fullname,type=@type WHERE ID=@ID", connection);
             cm.Parameters.AddWithValue("@fullname", txtFullname.Text);
             cm.Parameters.AddWithValue("@type", cmbUsertype.Text);

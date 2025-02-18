@@ -24,18 +24,27 @@ namespace ServiceDesk.Forms
         private string _fullName;
         private string _haveSession;
         private readonly string key = "c24ca5898a4fjwidjwi2bdsn235a1916";
+        private SqlConnection connection { get; set; } = null;
+
         public Login()
         {
             InitializeComponent();
             _ = LoadFullname();
+        }
+        private async Task CreateConnectionWithDatabase()
+        {
+            connection = await connect.LoginWithoutAuthentication().ConfigureAwait(false);
+            await connection.OpenAsync();
         }
         private async Task LoadFullname()
         {
             try
             {
                 txtUsername.Items.Clear();
-                using var connection =  connect.LoginToTheServerAsync();
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand("SELECT fullname FROM Users", connection);
                 using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
                 while (await dr.ReadAsync())
@@ -53,8 +62,10 @@ namespace ServiceDesk.Forms
         {
             try
             {
-                using var connection = connect.LoginToTheServerAsync();
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand("SELECT session FROM Users WHERE fullname LIKE @fullname", connection);
                 cm.Parameters.AddWithValue("@fullname", txtUsername.Text);
                 using SqlDataReader dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
@@ -88,11 +99,9 @@ namespace ServiceDesk.Forms
         {
             await CheckSession();
             var user_password = Cryptography.EncryptString(key, txtPassword.Text);
-            using var connection = connect.LoginToTheServerAsync();
-            if (connection is null)
+            if (connection is null || connection.State == ConnectionState.Closed)
             {
-                MessageBox.Show("Unable to connect to the server.", "Connection Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
+                await CreateConnectionWithDatabase();
             }
             using (var cm = new SqlCommand("SELECT type FROM Users WHERE fullname LIKE @fullname AND password = @password", connection))
             {

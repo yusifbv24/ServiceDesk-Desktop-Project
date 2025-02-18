@@ -36,6 +36,7 @@ namespace ServiceDesk.Forms
             {
                 connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId).ConfigureAwait(false);
             }
+            await connection.OpenAsync();
         }
         private string ChangeBooleanToString(bool status)
         {

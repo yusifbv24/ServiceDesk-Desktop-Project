@@ -7,6 +7,7 @@ using TableDependency.SqlClient;
 using TableDependency.SqlClient.Base.EventArgs;
 using static ServiceDesk.Class.TableDependencies;
 using TableDependency.SqlClient.Base.Enums;
+using System.Data;
 
 namespace ServiceDesk.Forms
 {
@@ -17,6 +18,7 @@ namespace ServiceDesk.Forms
         private readonly string _fullname = default;
         private SqlTableDependency<TicketTable> _tableDependency_Ticket;
         private SqlTableDependency<StatusTable> _tableDependency_Status;
+        private SqlConnection connection { get; set; } = null;
         public ClosedTickets(string _fullname, Main mainMenu,out ClosedTickets closedTickets)
         {
             InitializeComponent();
@@ -25,6 +27,14 @@ namespace ServiceDesk.Forms
             _mainMenu = mainMenu;
             _ = LoadTickets();
             StartTableDependency(); // Start listening for table changes
+        }
+        private async Task CreateConnectionWithDatabase()
+        {
+            if (connection == null)
+            {
+                connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId).ConfigureAwait(false);
+            }
+            await connection.OpenAsync();
         }
         private string RemoveStringFromTime(string text)
         {
@@ -60,8 +70,10 @@ namespace ServiceDesk.Forms
                                OR taken_time LIKE @searchText) ";
                 }
                 query += " ORDER BY Status.ID DESC; ";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using SqlCommand cm = new(query, connection);
                 cm.Parameters.AddWithValue("@fromDate", _mainMenu.fromDate);
                 cm.Parameters.AddWithValue("@toDate", _mainMenu.toDate);
@@ -71,7 +83,7 @@ namespace ServiceDesk.Forms
                 {
                     cm.Parameters.AddWithValue("@searchText", $"%{_mainMenu.txtSearch.Text}%");
                 }
-                using SqlDataReader dr = await cm.ExecuteReaderAsync();
+                using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
                 while (await dr.ReadAsync())
                 {
                     dgvTicket.Rows.Add(
@@ -100,87 +112,112 @@ namespace ServiceDesk.Forms
             }
         }
         #region SqlTableDependency
-        private async void ClosedTickets_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            await StopTableDependency();
-        }
         private void StartTableDependency()
         {
-            System.Threading.Tasks.Task.Run(async () =>
+            Task.Run(async () =>
             {
+                await Task.Delay(1000);
                 await TicketTableDependency();
-                await System.Threading.Tasks.Task.Delay(3000);
+                await Task.Delay(1000);
                 await StatusTableDependency();
-                await System.Threading.Tasks.Task.Delay(3000);
             });
         }
         private async Task TicketTableDependency()
         {
-            _tableDependency_Ticket = new SqlTableDependency<TicketTable>(connect.ServicedeskConnection, "Ticket");
-            _tableDependency_Ticket.OnChanged += TableDependency_Ticket_OnChanged;
-            _tableDependency_Ticket.OnError += TableDependency_OnError;
-            _tableDependency_Ticket.Start();
-            await System.Threading.Tasks.Task.Delay(1000);
+            if (_tableDependency_Ticket == null)
+            {
+                using (_tableDependency_Ticket = new SqlTableDependency<TicketTable>(connect.ServicedeskConnection, "Ticket"))
+                {
+                    _tableDependency_Ticket.OnChanged += TableDependency_Ticket_OnChanged;
+                    _tableDependency_Ticket.OnError += TableDependency_OnError;
+                    _tableDependency_Ticket.Start();
+                }
+            }
+            else
+            {
+                _tableDependency_Ticket.OnChanged += TableDependency_Ticket_OnChanged;
+                _tableDependency_Ticket.OnError += TableDependency_OnError;
+                _tableDependency_Ticket.Start();
+            }
+            await Task.Delay(1);
         }
         private async Task StatusTableDependency()
         {
-            _tableDependency_Status = new SqlTableDependency<StatusTable>(connect.ServicedeskConnection, "Status");
-            _tableDependency_Status.OnChanged += TableDependency_Status_OnChanged;
-            _tableDependency_Status.OnError += TableDependency_OnError;
-            _tableDependency_Status.Start();
-            await System.Threading.Tasks.Task.Delay(1000);
-        }
-        private async Task StopTableDependency()
-        {
-            _tableDependency_Ticket?.Stop();
-            _tableDependency_Ticket?.Dispose();
-            _tableDependency_Status?.Stop();
-            _tableDependency_Status?.Dispose();
-            await System.Threading.Tasks.Task.Delay(1);
-        }
-        private async Task RestartTableDependency()
-        {
-            try
+            if (_tableDependency_Status == null)
             {
-                await StopTableDependency();
-
-                // Wait a moment before restarting
-                await System.Threading.Tasks.Task.Delay(5000);
-
-                // Restart dependencies
-                StartTableDependency();
+                using (_tableDependency_Status = new SqlTableDependency<StatusTable>(connect.ServicedeskConnection, "Status"))
+                {
+                    _tableDependency_Status.OnChanged += TableDependency_Status_OnChanged;
+                    _tableDependency_Status.OnError += TableDependency_OnError;
+                    _tableDependency_Status.Start();
+                }
             }
-            catch (Exception ex)
+            else
             {
-                await Logger.Log(_fullname,
-                    $" | Error restarting TableDependency in ClosedTicket. | Error is: {ex.Message}");
+                _tableDependency_Status.OnChanged += TableDependency_Status_OnChanged;
+                _tableDependency_Status.OnError += TableDependency_OnError;
+                _tableDependency_Status.Start();
             }
-        }
-        private async void TableDependency_OnError(object sender, ErrorEventArgs e)
-        {
-            await RestartTableDependency();
+            await Task.Delay(1);
         }
         private async void TableDependency_Ticket_OnChanged(object sender, RecordChangedEventArgs<TicketTable> e)
         {
-            if (!this.IsDisposed && this.IsHandleCreated)
+            if (this.IsDisposed && !this.IsHandleCreated)
+                return;
+            if (e.ChangeType != ChangeType.None)
             {
-                if (e.ChangeType != ChangeType.None)
-                {
-                    BeginInvoke((MethodInvoker)(async () => await LoadTickets()));
-                }
-                await System.Threading.Tasks.Task.Delay(1);
+                this.BeginInvoke((MethodInvoker)(async () => await LoadTickets()));
             }
+            await Task.Delay(1);
         }
         private async void TableDependency_Status_OnChanged(object sender, RecordChangedEventArgs<StatusTable> e)
         {
-            if (!this.IsDisposed && this.IsHandleCreated)
+            if (this.IsDisposed && !this.IsHandleCreated) return;
+            if (e.ChangeType != ChangeType.None)
             {
-                if (e.ChangeType != ChangeType.None)
-                {
-                    BeginInvoke((MethodInvoker)(async () => await LoadTickets()));
-                }
-                await System.Threading.Tasks.Task.Delay(1);
+                this.BeginInvoke((MethodInvoker)(async () => await LoadTickets()));
             }
+            await Task.Delay(1);
+        }
+        private async void TableDependency_OnError(object sender, ErrorEventArgs e)
+        {
+            await Logger.Log(_fullname, "Error occured while running table dependency in ClosedTicket");
+        }
+        private async Task StopTableDependency()
+        {
+            await SafeStop(_tableDependency_Ticket, "Ticket");
+            await SafeStop(_tableDependency_Status, "Status");
+        }
+        private async Task SafeStop<T>(SqlTableDependency<T> dependency, string name) where T : class, new()
+        {
+            if (dependency != null)
+            {
+                try
+                {
+                    dependency.Stop();
+                    dependency.Dispose();
+                }
+                catch (ObjectDisposedException)
+                {
+                    await Logger.Log(_fullname, $"{name} dependency is already disposed in ClosedTicket.");
+                }
+                catch (InvalidOperationException ex)
+                {
+                    await Logger.Log(_fullname, $"Invalid operation while stopping {name} in ClosedTicket: {ex.Message}");
+                }
+                catch (AggregateException ex)
+                {
+                    await Logger.Log(_fullname, $"AggregateException occurred in {name} in ClosedTicket: {ex.InnerException?.Message}");
+                }
+                catch (Exception ex)
+                {
+                    await Logger.Log(_fullname, $"Error stopping {name} in ClosedTicket: {ex.Message}");
+                }
+            }
+        }
+        private async void ClosedTickets_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            await StopTableDependency();
         }
         #endregion
     }

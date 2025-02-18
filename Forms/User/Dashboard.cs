@@ -7,7 +7,6 @@ using static ServiceDesk.Class.TableDependencies;
 using TableDependency.SqlClient;
 using TableDependency.SqlClient.Base.Enums;
 using TableDependency.SqlClient.Base.EventArgs;
-using System.Collections.Generic;
 using System.Data;
 
 namespace ServiceDesk.Forms
@@ -23,6 +22,7 @@ namespace ServiceDesk.Forms
         private SqlTableDependency<TicketTable> _tableDependency_Ticket;
         private SqlTableDependency<StatusTable> _tableDependency_Status;
         private SqlTableDependency<RatingTable> _tableDependency_Rating;
+        private SqlConnection connection { get; set; } = null;
         public Dashboard(string _fullname,Main mainMenu)
         {
             InitializeComponent();
@@ -32,8 +32,17 @@ namespace ServiceDesk.Forms
             _= DoItAll(_mainMenu.dateFiltering.Text);
             StartTableDependency(); // Start listening for table changes
         }
+        private async Task CreateConnectionWithDatabase()
+        {
+            if (connection == null)
+            {
+                connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId).ConfigureAwait(false);
+            }
+            await connection.OpenAsync();
+        }
         private async Task DoItAll(string date)
         {
+            await CreateConnectionWithDatabase();
             await CalculateCSATValue();
             await CountOfTicketsForUsers(date);
             await CheckTicketStatus(date);
@@ -74,8 +83,10 @@ namespace ServiceDesk.Forms
         {
             try
             {
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand("SELECT csat FROM Users WHERE fullname LIKE @fullname", connection);
                 cm.Parameters.AddWithValue("@fullname", _fullname);
                 using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
@@ -132,8 +143,10 @@ namespace ServiceDesk.Forms
                                     AND Status.status = 'closed' 
                                     GROUP BY Users.fullname 
                                     ORDER BY CountOfTickets DESC";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand(query, connection);
                 cm.Parameters.AddWithValue("@fromDate", _whichTime);
                 cm.Parameters.AddWithValue("@toDate", _today);
@@ -182,8 +195,10 @@ namespace ServiceDesk.Forms
                             FROM Status
                             INNER JOIN Ticket WITH (NOLOCK) ON Status.ID=Ticket.ID
                             WHERE Status.time BETWEEN @fromDate AND @toDate AND fullname LIKE @fullname";
-                var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand(query, connection);
                 cm.Parameters.AddWithValue("@fromDate", _whichTime);
                 cm.Parameters.AddWithValue("@toDate", _today);
@@ -220,8 +235,10 @@ namespace ServiceDesk.Forms
                             FROM Status
                             INNER JOIN Ticket WITH (NOLOCK) ON Status.ID=Ticket.ID
                             WHERE Status.status='pending' AND Status.time BETWEEN @fromDate AND @toDate AND fullname LIKE @fullname ";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if(connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand(query, connection);
                 cm.Parameters.AddWithValue("@fromDate", _whichTime);
                 cm.Parameters.AddWithValue("@toDate", _today);
@@ -258,8 +275,10 @@ namespace ServiceDesk.Forms
                             FROM Status
                             INNER JOIN Ticket WITH (NOLOCK) ON Status.ID=Ticket.ID
                             WHERE (Status.status='resolved' OR Status.status='resolving') AND Status.time BETWEEN @fromDate AND @toDate AND fullname LIKE @fullname ";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand(query, connection);
                 cm.Parameters.AddWithValue("@fromDate", _whichTime);
                 cm.Parameters.AddWithValue("@toDate", _today);
@@ -296,8 +315,10 @@ namespace ServiceDesk.Forms
                             FROM Status
                             INNER JOIN Ticket WITH (NOLOCK) ON Status.ID=Ticket.ID
                             WHERE Status.status='closed' AND Status.time BETWEEN @fromDate AND @toDate AND fullname LIKE @fullname ";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand(query, connection);
                 cm.Parameters.AddWithValue("@fromDate", _whichTime);
                 cm.Parameters.AddWithValue("@toDate", _today);
@@ -397,8 +418,10 @@ namespace ServiceDesk.Forms
                             INNER JOIN Rating WITH (NOLOCK) ON Rating.ID = Status.ID
                             INNER JOIN Ticket WITH (NOLOCK) ON Status.ID=Ticket.ID
                             WHERE Status.time BETWEEN @fromDate AND @toDate AND fullname LIKE @fullname ORDER BY ID DESC";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand(query, connection);
                 cm.Parameters.AddWithValue("@fromDate", _firstDate);
                 cm.Parameters.AddWithValue("@toDate", _today);
@@ -463,8 +486,10 @@ namespace ServiceDesk.Forms
 				AND tp.fullname LIKE @fullname 
 				GROUP BY tp.fullname, p.ID, p.task 
 				ORDER BY tp.fullname, CountOfTickets DESC";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand(query, connection);
                 cm.Parameters.AddWithValue("@fromDate", _whichTime);
                 cm.Parameters.AddWithValue("@toDate", _today);
@@ -495,107 +520,134 @@ namespace ServiceDesk.Forms
         {
             Task.Run(async () =>
             {
+                await Task.Delay(1000);
                 await TicketTableDependency();
-                await Task.Delay(3000);
+                await Task.Delay(1000);
                 await StatusTableDependency();
-                await Task.Delay(3000);
+                await Task.Delay(1000);
                 await RatingTableDependency();
-                await Task.Delay(3000);
             });
         }
         private async Task TicketTableDependency()
         {
-            _tableDependency_Ticket = new SqlTableDependency<TicketTable>(connect.ServicedeskConnection, "Ticket");
-            _tableDependency_Ticket.OnChanged += TableDependency_Ticket_OnChanged;
-            _tableDependency_Ticket.OnError += TableDependency_OnError;
-            _tableDependency_Ticket.Start();
-            await Task.Delay(1000);
+            if (_tableDependency_Ticket == null)
+            {
+                using (_tableDependency_Ticket = new SqlTableDependency<TicketTable>(connect.ServicedeskConnection, "Ticket"))
+                {
+                    _tableDependency_Ticket.OnChanged += TableDependency_Ticket_OnChanged;
+                    _tableDependency_Ticket.OnError += TableDependency_OnError;
+                    _tableDependency_Ticket.Start();
+                }
+            }
+            else
+            {
+                _tableDependency_Ticket.OnChanged += TableDependency_Ticket_OnChanged;
+                _tableDependency_Ticket.OnError += TableDependency_OnError;
+                _tableDependency_Ticket.Start();
+            }
+            await Task.Delay(1);
         }
         private async Task StatusTableDependency()
         {
-            _tableDependency_Status = new SqlTableDependency<StatusTable>(connect.ServicedeskConnection, "Status");
-            _tableDependency_Status.OnChanged += TableDependency_Status_OnChanged;
-            _tableDependency_Status.OnError += TableDependency_OnError;
-            _tableDependency_Status.Start();
-            await Task.Delay(1000);
+            if (_tableDependency_Status == null)
+            {
+                using (_tableDependency_Status = new SqlTableDependency<StatusTable>(connect.ServicedeskConnection, "Status"))
+                {
+                    _tableDependency_Status.OnChanged += TableDependency_Status_OnChanged;
+                    _tableDependency_Status.OnError += TableDependency_OnError;
+                    _tableDependency_Status.Start();
+                }
+            }
+            else
+            {
+                _tableDependency_Status.OnChanged += TableDependency_Status_OnChanged;
+                _tableDependency_Status.OnError += TableDependency_OnError;
+                _tableDependency_Status.Start();
+            }
+            await Task.Delay(1);
         }
         private async Task RatingTableDependency()
         {
-            _tableDependency_Rating = new SqlTableDependency<RatingTable>(connect.ServicedeskConnection, "Rating");
-            _tableDependency_Rating.OnChanged += TableDependency_Rating_OnChanged;
-            _tableDependency_Rating.OnError += TableDependency_OnError;
-            _tableDependency_Rating.Start();
-            await Task.Delay(1000);
-        }
-        private async Task StopTableDependency()
-        {
-            _tableDependency_Ticket?.Stop();
-            _tableDependency_Ticket?.Dispose();
-            _tableDependency_Status?.Stop();
-            _tableDependency_Status?.Dispose();
-            _tableDependency_Rating?.Dispose();
-            _tableDependency_Rating?.Dispose();
+            if (_tableDependency_Rating == null)
+            {
+                using (_tableDependency_Rating = new SqlTableDependency<RatingTable>(connect.ServicedeskConnection, "Rating"))
+                {
+                    _tableDependency_Rating.OnChanged += TableDependency_Rating_OnChanged;
+                    _tableDependency_Rating.OnError += TableDependency_OnError;
+                    _tableDependency_Rating.Start();
+                }
+            }
+            else
+            {
+                _tableDependency_Rating.OnChanged += TableDependency_Rating_OnChanged;
+                _tableDependency_Rating.OnError += TableDependency_OnError;
+                _tableDependency_Rating.Start();
+            }
             await Task.Delay(1);
-        }
-        private async Task RestartTableDependency()
-        {
-            try
-            {
-                await StopTableDependency();
-
-                // Wait a moment before restarting
-                await Task.Delay(5000);
-
-                // Restart dependencies
-                StartTableDependency();
-            }
-            catch (Exception ex)
-            {
-                await Logger.Log(_fullname,
-                    $" | Error restarting TableDependency in Dashboard. | Error is: {ex.Message}");
-            }
         }
         private async void TableDependency_OnError(object sender, ErrorEventArgs e)
         {
-            await RestartTableDependency();
+            await Logger.Log(_fullname, "Error occured while running table dependency in Dashboard");
         }
         private async void TableDependency_Ticket_OnChanged(object sender, RecordChangedEventArgs<TicketTable> e)
         {
-            if (!this.IsDisposed && this.IsHandleCreated)
+            if (this.IsDisposed && !this.IsHandleCreated)
+                return;
+            if (e.ChangeType != ChangeType.None)
             {
-                if (e.ChangeType != ChangeType.None)
-                {
-                    BeginInvoke((MethodInvoker)(async () => await CountOfTicketsForUsers(_mainMenu.dateFiltering.Text)));
-                    BeginInvoke((MethodInvoker)(async () => await CheckTicketStatus(_mainMenu.dateFiltering.Text)));
-                    BeginInvoke((MethodInvoker)(async () => await LastTickets(_mainMenu.dateFiltering.Text)));
-                    BeginInvoke((MethodInvoker)(async () => await FindTopTasks(_mainMenu.dateFiltering.Text)));
-                }
-                await Task.Delay(1);
+                this.BeginInvoke((MethodInvoker)(async () => await DoItAll(_mainMenu.dateFiltering.Text)));
             }
+            await Task.Delay(1);
         }
         private async void TableDependency_Status_OnChanged(object sender, RecordChangedEventArgs<StatusTable> e)
         {
-            if (!this.IsDisposed && this.IsHandleCreated)
+            if (this.IsDisposed && !this.IsHandleCreated) return;
+            if (e.ChangeType != ChangeType.None)
             {
-                if (e.ChangeType != ChangeType.None)
-                {
-                    BeginInvoke((MethodInvoker)(async () => await CountOfTicketsForUsers(_mainMenu.dateFiltering.Text)));
-                    BeginInvoke((MethodInvoker)(async () => await CheckTicketStatus(_mainMenu.dateFiltering.Text)));
-                    BeginInvoke((MethodInvoker)(async () => await LastTickets(_mainMenu.dateFiltering.Text)));
-                }
-                await Task.Delay(1);
+                this.BeginInvoke((MethodInvoker)(async () => await DoItAll(_mainMenu.dateFiltering.Text)));
             }
+            await Task.Delay(1);
         }
         private async void TableDependency_Rating_OnChanged(object sender, RecordChangedEventArgs<RatingTable> e)
         {
-            if (!this.IsDisposed && this.IsHandleCreated)
+            if (this.IsDisposed && !this.IsHandleCreated) return;
+            if (e.ChangeType != ChangeType.None)
             {
-                if (e.ChangeType != ChangeType.None)
+                this.BeginInvoke((MethodInvoker)(async () => await LastTickets(_mainMenu.dateFiltering.Text)));
+            }
+            await Task.Delay(1);
+        }
+        private async Task StopTableDependency()
+        {
+            await SafeStop(_tableDependency_Ticket, "Ticket");
+            await SafeStop(_tableDependency_Status, "Status");
+            await SafeStop(_tableDependency_Rating, "Rating");
+        }
+        private async Task SafeStop<T>(SqlTableDependency<T> dependency, string name) where T : class, new()
+        {
+            if (dependency != null)
+            {
+                try
                 {
-                    BeginInvoke((MethodInvoker)(async () => await LastTickets(_mainMenu.dateFiltering.Text)));
-                    BeginInvoke((MethodInvoker)(async () => await CalculateCSATValue()));
+                    dependency.Stop();
+                    dependency.Dispose();
                 }
-                await Task.Delay(1);
+                catch (ObjectDisposedException)
+                {
+                    await Logger.Log(_fullname, $"{name} dependency is already disposed in Dashboard.");
+                }
+                catch (InvalidOperationException ex)
+                {
+                    await Logger.Log(_fullname, $"Invalid operation while stopping {name} in Dashboard: {ex.Message}");
+                }
+                catch (AggregateException ex)
+                {
+                    await Logger.Log(_fullname, $"AggregateException occurred in {name} in Dashboard: {ex.InnerException?.Message}");
+                }
+                catch (Exception ex)
+                {
+                    await Logger.Log(_fullname, $"Error stopping {name} in Dashboard: {ex.Message}");
+                }
             }
         }
         #endregion

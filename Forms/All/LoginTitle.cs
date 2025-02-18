@@ -17,6 +17,7 @@ namespace ServiceDesk.Forms
         private string _userIpAddress = default;
         private readonly Connect connect = Connect.Instance;
         private Guid sessionId = Guid.Empty;
+        private SqlConnection connection { get; set; } = null;
         public LoginTitle(string userType, string fullname)
         {
             InitializeComponent();
@@ -35,12 +36,17 @@ namespace ServiceDesk.Forms
             }
             else
             {
-                circle.Value +=3;
+                circle.Value += 3;
             }
+        }
+        private async Task CreateDatabaseConnection()
+        {
+            connection = await connect.LoginWithoutAuthentication().ConfigureAwait(false);
+            await connection.OpenAsync();
         }
         private async Task CallMainMethod()
         {
-            Main main = new(_userType, _fullname,sessionId);
+            Main main = new(_userType, _fullname, sessionId);
             main.btnFullname.Text = _fullname;
             main.Show();
             await UpdateUserSession();
@@ -59,7 +65,10 @@ namespace ServiceDesk.Forms
             try
             {
                 await GetYourIpAddress();
-                using var connection = connect.LoginToTheServerAsync();
+                if (connection == null||connection.State==ConnectionState.Closed)
+                {
+                    await CreateDatabaseConnection();
+                }
                 string query = @"
                 UPDATE UserSessions 
                 SET LastActivity = GETDATE(),IsActive=1 
@@ -67,7 +76,6 @@ namespace ServiceDesk.Forms
                 UPDATE Users
                 SET ip_address=@ip_address ,session=@session
                 WHERE fullname LIKE @fullname";
-                if (connection is null) return;
                 using var cm = new SqlCommand(query, connection);
                 cm.Parameters.AddWithValue("@SessionId", sessionId);
                 cm.Parameters.AddWithValue("@ip_address", _userIpAddress);
@@ -86,11 +94,13 @@ namespace ServiceDesk.Forms
         private async Task CreateNewSession()
         {
             sessionId = Guid.NewGuid();
-            using var connection = connect.LoginToTheServerAsync();
+            if (connection == null || connection.State == ConnectionState.Closed)
+            {
+                await CreateDatabaseConnection();
+            }
             string query = @"
             INSERT INTO UserSessions (SessionId, UserId, LastActivity, IsActive)
             VALUES (@SessionId, @UserId, GETDATE(), 1)";
-            if (connection is null) return;
             using var cm = new SqlCommand(query, connection);
             cm.Parameters.AddWithValue("@SessionId", sessionId);
             cm.Parameters.AddWithValue("@UserId", _fullname);
@@ -98,9 +108,11 @@ namespace ServiceDesk.Forms
         }
         private async Task SearchForSession()
         {
-            var connection= connect.LoginToTheServerAsync();
+            if (connection == null || connection.State == ConnectionState.Closed)
+            {
+                await CreateDatabaseConnection();
+            }
             string query = @"SELECT SessionId FROM UserSessions WHERE UserId LIKE @UserId";
-            if (connection is null) return;
             using var cm = new SqlCommand(query, connection);
             cm.Parameters.AddWithValue("@UserId", _fullname);
             using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);

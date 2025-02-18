@@ -15,6 +15,15 @@ namespace ServiceDesk.Class
         private static float _sumOfRatingValues = 0;
         private static float CSATValue = 0;
         private static readonly Connect connect = Connect.Instance;
+        private static SqlConnection connection { get; set; } = null;
+        private static async Task CreateConnectionWithDatabase(Guid sessionId)
+        {
+            if (connection == null)
+            {
+                connection = await connect.EstablishConnectionWithServiceDeskAsync(sessionId).ConfigureAwait(false);
+            }
+            await connection.OpenAsync();
+        }
         private static async Task SearchForRatingValues(string fullname,Guid sessionId)
         {
             try
@@ -27,8 +36,10 @@ namespace ServiceDesk.Class
                                      INNER JOIN Status WITH (NOLOCK) ON Rating.ID=Status.ID
                                      WHERE Status.time BETWEEN @before30daysago AND @today 
                                      AND Ticket.fullname LIKE @fullname ";
-                    using var connection = await connect.EstablishConnectionWithServiceDeskAsync(sessionId);
-                    if (connection is null) return;
+                    if (connection == null || connection.State == ConnectionState.Closed)
+                    {
+                        await CreateConnectionWithDatabase(sessionId);
+                    }
                     using SqlCommand cm = new(query, connection);
                     cm.Parameters.AddWithValue("@before30daysago", _firstDayOfMonth);
                     cm.Parameters.AddWithValue("@today", _today);
@@ -88,8 +99,10 @@ namespace ServiceDesk.Class
         {
             try
             {
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(sessionId);
-                if (connection is null) return;
+                if (connection == null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase(sessionId);
+                }
                 using SqlCommand cm = new("UPDATE Users SET csat=@csat WHERE fullname LIKE @fullname", connection);
                 cm.Parameters.AddWithValue("@fullname", fullname);
                 if (float.TryParse(CSATValue.ToString(), out float parsedCSATValue))
@@ -107,10 +120,6 @@ namespace ServiceDesk.Class
             {
                 Notifications.Error(ex.Message);
                 await Logger.Log(fullname, $" | Error occured in Ratings Class while running UpdateCSATValue. | Error is: {ex.Message}");
-            }
-            finally
-            {
-                await Task.Delay(1);
             }
         }
     }

@@ -25,6 +25,9 @@ namespace ServiceDesk.Forms
         private string _tasks;
         private string _users;
         private Main _mainMenu;
+        private SqlConnection connection { get; set; } = null;
+        private SqlConnection connection_inventory { get; set; } = null;
+
         public TicketModule(string _fullName,string userType, Main mainMenu)
         {
             InitializeComponent();
@@ -34,6 +37,22 @@ namespace ServiceDesk.Forms
             LoadInformation();
             LoadDefaultSettings();
             guna2ShadowForm.SetShadowForm(this);
+        }
+        private async Task CreateConnectionWithDatabase()
+        {
+            if (connection == null)
+            {
+                connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId).ConfigureAwait(false);
+            }
+            await connection.OpenAsync();
+        }
+        private async Task CreateConnectionWithInventory()
+        {
+            if (connection_inventory == null)
+            {
+                connection_inventory = await connect.EstablishConnectionWithInventoryAsync().ConfigureAwait(false);
+            }
+            await connection_inventory.OpenAsync();
         }
         #region LoadSomeInformation
         public void LoadDefaultSettings()
@@ -64,8 +83,10 @@ namespace ServiceDesk.Forms
             try
             {
                 cmbTask.Items.Clear();
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand("SELECT task FROM Tasks", connection);
                 using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
                 while (await dr.ReadAsync())
@@ -84,8 +105,10 @@ namespace ServiceDesk.Forms
             try
             {
                 txtDep.Items.Clear();
-                using var connection = await connect.EstablishConnectionWithInventoryAsync();
-                if (connection is null) return;
+                if (connection_inventory is null || connection_inventory.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand("SELECT dname FROM Department", connection);
                 using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
                 while (await dr.ReadAsync())
@@ -104,8 +127,10 @@ namespace ServiceDesk.Forms
             try
             {
                 cmbUsers.Items.Clear();
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand("SELECT fullname FROM Users WHERE type='User'", connection);
                 using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
                 while (await dr.ReadAsync())
@@ -126,8 +151,10 @@ namespace ServiceDesk.Forms
             try
             {
                 string query = "SELECT MAX(ID) AS MaxID FROM Ticket";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand(query, connection);
                 var result = await cm.ExecuteScalarAsync();
                 ticketID = result != DBNull.Value && result != null ? Convert.ToInt32(result) + 1 : 1;
@@ -245,8 +272,10 @@ namespace ServiceDesk.Forms
         {
             try
             {
-                using var connection = await connect.EstablishConnectionWithInventoryAsync();
-                if (connection is null) return;
+                if (connection_inventory is null || connection_inventory.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand("SELECT prodCode,pdepartment,pworker,pcategory FROM Product WHERE prodCode=@prodCode1 OR prodCode=@prodCode2 OR prodCode=@prodCode3", connection);
                 cm.Parameters.AddWithValue("@prodCode1", $"{txtCode.Text}");
                 cm.Parameters.AddWithValue("@prodCode2", $"*{txtCode.Text}");
@@ -450,8 +479,10 @@ namespace ServiceDesk.Forms
                                     INSERT INTO Rating
                                     (ID)
                               VALUES(@ID)";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand(query, connection);
                 cm.Parameters.AddWithValue("@ID", ticketID);
                 cm.Parameters.AddWithValue("@code", txtCode.Text);
@@ -525,8 +556,10 @@ namespace ServiceDesk.Forms
                           fullname=@fullname
                     WHERE 
                           ID=@ID";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand(query, connection);
                 cm.Parameters.AddWithValue("@ID", ticketID);
                 cm.Parameters.AddWithValue("@code", txtCode.Text);
@@ -606,33 +639,33 @@ namespace ServiceDesk.Forms
                           fullname=@fullname
                     WHERE
                           ID=@ID";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
                 {
-                    using var cm = new SqlCommand(query, connection);
-                    cm.Parameters.AddWithValue("@ID", ticketID);
-                    cm.Parameters.AddWithValue("@code", txtCode.Text);
-                    cm.Parameters.AddWithValue("@dep_name", txtDep.Text);
-                    cm.Parameters.AddWithValue("@worker", txtWorker.Text);
-                    cm.Parameters.AddWithValue("@device", txtDevice.Text);
-                    cm.Parameters.AddWithValue("@task", _tasks);
-                    cm.Parameters.AddWithValue("@fullname", _users);
-                    cm.Parameters.AddWithValue("@solution", txtSolution.Text);
-                    cm.Parameters.AddWithValue("@finished_time", DateTime.Now.ToString());
-                    cm.Parameters.AddWithValue("@taken_time", CalculateTime(DateTime.Parse(timeElapsed)));
-                    await cm.ExecuteNonQueryAsync();
-                    if (cm != null)
-                    {
-                        Notifications.Information("Ticket has been succesfully closed", "Succesful");
-                        await Logger.Log(_fullname, $" closed a ticket with Ticket ID: [{ticketID}], Inventory Code: [{txtCode.Text}], Department: [{txtDep.Text}], Worker: [{txtWorker.Text}], Device: [{txtDevice.Text}], Task: [{_tasks}], Solution: [{txtSolution.Text}], Fullname: [{_fullname}] in Ticket Table");
-                        await CloseTicketStatus("closed");
-                        await CloseTicketStatus("resolved");
-                    }
-                    else
-                    {
-                        Notifications.Warning("Ticket has not been closed");
-                        return;
-                    }
+                    await CreateConnectionWithDatabase();
+                }
+                using var cm = new SqlCommand(query, connection);
+                cm.Parameters.AddWithValue("@ID", ticketID);
+                cm.Parameters.AddWithValue("@code", txtCode.Text);
+                cm.Parameters.AddWithValue("@dep_name", txtDep.Text);
+                cm.Parameters.AddWithValue("@worker", txtWorker.Text);
+                cm.Parameters.AddWithValue("@device", txtDevice.Text);
+                cm.Parameters.AddWithValue("@task", _tasks);
+                cm.Parameters.AddWithValue("@fullname", _users);
+                cm.Parameters.AddWithValue("@solution", txtSolution.Text);
+                cm.Parameters.AddWithValue("@finished_time", DateTime.Now.ToString());
+                cm.Parameters.AddWithValue("@taken_time", CalculateTime(DateTime.Parse(timeElapsed)));
+                await cm.ExecuteNonQueryAsync();
+                if (cm != null)
+                {
+                    Notifications.Information("Ticket has been succesfully closed", "Succesful");
+                    await Logger.Log(_fullname, $" closed a ticket with Ticket ID: [{ticketID}], Inventory Code: [{txtCode.Text}], Department: [{txtDep.Text}], Worker: [{txtWorker.Text}], Device: [{txtDevice.Text}], Task: [{_tasks}], Solution: [{txtSolution.Text}], Fullname: [{_fullname}] in Ticket Table");
+                    await CloseTicketStatus("closed");
+                    await CloseTicketStatus("resolved");
+                }
+                else
+                {
+                    Notifications.Warning("Ticket has not been closed");
+                    return;
                 }
             }
             catch (Exception ex)
@@ -659,8 +692,10 @@ namespace ServiceDesk.Forms
                                     INSERT INTO Rating
                                     (ID)
                               VALUES(@ID)";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+                if (connection is null || connection.State == ConnectionState.Closed)
+                {
+                    await CreateConnectionWithDatabase();
+                }
                 using var cm = new SqlCommand(query, connection);
                 cm.Parameters.AddWithValue("@ID", ticketID);
                 cm.Parameters.AddWithValue("@code", txtCode.Text);
@@ -700,8 +735,10 @@ namespace ServiceDesk.Forms
         private async Task CloseTicketStatus(string status)
         {
             //Closing the status of ticket
-            using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-            if (connection is null) return;
+            if (connection is null || connection.State == ConnectionState.Closed)
+            {
+                await CreateConnectionWithDatabase();
+            }
             using var cm = new SqlCommand("UPDATE Status SET status=@status WHERE status=@currentStatus AND ID=@ID", connection);
             cm.Parameters.AddWithValue("@status", status);
             cm.Parameters.AddWithValue("@currentStatus", status == "closed" ? "pending" : "resolving");

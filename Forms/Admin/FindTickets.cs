@@ -31,12 +31,17 @@ namespace ServiceDesk.Forms
             {
                 connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId).ConfigureAwait(false);
             }
+            await connection.OpenAsync();
         }
         private async Task CreateConnectionWithInventory()
         {
             if (connection_inventory == null)
             {
                 connection_inventory = await connect.EstablishConnectionWithInventoryAsync().ConfigureAwait(false);
+            }
+            if (connection_inventory.State == ConnectionState.Closed)
+            {
+                await connection_inventory.OpenAsync();
             }
         }
         private string RemoveStringFromTime(string text)

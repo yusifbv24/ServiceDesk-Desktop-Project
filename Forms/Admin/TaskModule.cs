@@ -8,6 +8,7 @@ using static ServiceDesk.Class.TableDependencies;
 using TableDependency.SqlClient.Base.Enums;
 using TableDependency.SqlClient.Base.EventArgs;
 using TableDependency.SqlClient;
+using System.Data;
 
 namespace ServiceDesk.Forms
 {
@@ -17,12 +18,21 @@ namespace ServiceDesk.Forms
         private readonly string _fullname = default;
         public string problemID = default;
         private Main _mainMenu;
+        private SqlConnection connection { get; set; } = null;
         public TaskModule(string fullname, Main mainMenu)
         {
             InitializeComponent();
             _fullname = fullname;
             this.KeyPreview = true;
             _mainMenu = mainMenu;
+        }
+        private async Task CreateConnectionWithDatabase()
+        {
+            if (connection == null)
+            {
+                connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId).ConfigureAwait(false);
+            }
+            await connection.OpenAsync();
         }
         private void BtnExit_Click(object sender, EventArgs e) => this.Dispose();
         private void BtnClear_Click(object sender, EventArgs e) => txtTask.Text = string.Empty;
@@ -37,8 +47,10 @@ namespace ServiceDesk.Forms
                 }
                 if (MessageBox.Show("Are you sure you want to save this task?", "Saving Record", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                 {
-                    using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                    if(connection is null) return;
+                    if (connection is null || connection.State == ConnectionState.Closed)
+                    {
+                        await CreateConnectionWithDatabase();
+                    }
                     using var cm = new SqlCommand("INSERT INTO Tasks(task)VALUES(@task)", connection);
                     cm.Parameters.AddWithValue("@task", txtTask.Text);
                     await cm.ExecuteNonQueryAsync();
@@ -67,8 +79,11 @@ namespace ServiceDesk.Forms
                 }
                 if (MessageBox.Show("Are you sure you want to update this task?", "Update Record", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                 {
-                    using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
                     if (connection is null) return;
+                    if (connection is null || connection.State == ConnectionState.Closed)
+                    {
+                        await CreateConnectionWithDatabase();
+                    }
                     using var cm = new SqlCommand("UPDATE Tasks SET task = @task WHERE ID=@ID", connection);
                     cm.Parameters.AddWithValue("@ID", Convert.ToInt32(problemID));
                     cm.Parameters.AddWithValue("@task", txtTask.Text);

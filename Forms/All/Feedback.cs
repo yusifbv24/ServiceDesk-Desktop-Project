@@ -26,6 +26,7 @@ namespace ServiceDesk.Forms
             {
                 connection = await connect.EstablishConnectionWithServiceDeskAsync(_sessionId).ConfigureAwait(false);
             }
+            await connection.OpenAsync();
         }
         private async Task UpdateDatabaseWithoutRating()
         {

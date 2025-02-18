@@ -1,13 +1,16 @@
 ﻿using System;
+using System.Data;
 using System.Data.SqlClient;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace ServiceDesk.Class
 {
     internal class CredentialManager
     {
         private static readonly Connect connect = Connect.Instance;
+        private static SqlConnection connection { get; set; } = null;
         private static readonly string _credentialFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "user_credentials.dat");
         protected static void SaveCredentials(string username, string userType, string hostname)
         {
@@ -31,11 +34,20 @@ namespace ServiceDesk.Class
             File.Delete(_credentialFilePath);
             RemoveSession(fullname);
         }
+        private static async Task CreateConnectionWithDatabase()
+        {
+            if (connection == null)
+            {
+                connection = await connect.LoginWithoutAuthentication().ConfigureAwait(false);
+            }
+            await connection.OpenAsync();
+        }
         public static async void RemoveSession(string fullname)
         {
-            using var connection = connect.LoginToTheServerAsync();
-
-            if (connection is null) return;// Ensure the connection is established
+            if (connection is null || connection.State == ConnectionState.Closed)
+            {
+                await CreateConnectionWithDatabase();
+            }
             string query = @"DELETE FROM UserSessions WHERE UserId LIKE @UserId";
 
             using var cm = new SqlCommand(query, connection);
