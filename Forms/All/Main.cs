@@ -14,7 +14,6 @@ namespace ServiceDesk.Forms
 {
     public partial class Main : Form
     {
-        private readonly Connect connect = Connect.Instance;
         public string fromDate;
         public string toDate;
         private OpenedTickets _openedTicketsForUser;
@@ -30,8 +29,7 @@ namespace ServiceDesk.Forms
         public readonly Guid _sessionId;
         private Timer checkActivityTimer;
         private Form _activeForm = null;
-        private SqlConnection connection { get; set; } = null;
-
+        private SqlConnection _connection { get; set; } = null;
         private readonly Dictionary<string, string> _titleForForms = new()
         {
             {"Main","Home"},
@@ -58,14 +56,6 @@ namespace ServiceDesk.Forms
             };
             checkActivityTimer.Tick += async (sender, e) => await CheckUserActivity();
             checkActivityTimer.Start();
-        }
-        private async Task CreateConnectionWithDatabase()
-        {
-            if (connection == null)
-            {
-                connection = await connect.EstablishConnectionWithServiceDeskAsync(_sessionId).ConfigureAwait(false);
-            }
-            await connection.OpenAsync();
         }
         #region Control Buttons
         private void BtnMinimize_Click(object sender, EventArgs e) => this.WindowState = FormWindowState.Minimized;
@@ -296,6 +286,18 @@ namespace ServiceDesk.Forms
         }
         #endregion
         #region LogoutSection
+        private async Task ConnectToTheDatabase()
+        {
+            if (_connection == null)
+            {
+                _connection = await ConnectionDatabase.ConnectToTheServer(_sessionId);
+                await _connection.OpenAsync();
+            }
+            if (_connection.State == ConnectionState.Closed)
+            {
+                await _connection.OpenAsync();
+            }
+        }
         //Check for user is active or not
         private async Task CheckUserActivity()
         {
@@ -321,11 +323,11 @@ namespace ServiceDesk.Forms
             try
             {
                 string query = @"SELECT IsActive FROM UserSessions WHERE SessionId = @SessionId";
-                if (connection is null || connection.State == ConnectionState.Closed)
+                if (_connection == null || _connection.State == ConnectionState.Closed)
                 {
-                    await CreateConnectionWithDatabase();
+                    await ConnectToTheDatabase();
                 }
-                using var cm = new SqlCommand(query, connection);
+                using var cm = new SqlCommand(query, _connection);
                 cm.Parameters.AddWithValue("@SessionId", _sessionId);
                 using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
                 _isActiveUser = await dr.ReadAsync() && dr.GetBoolean(0); // Assumes IsActive is a BIT column
@@ -340,20 +342,20 @@ namespace ServiceDesk.Forms
         {
             if (_isActiveUser)
             {
-                try
-                {
-                    if (connection is null || connection.State == ConnectionState.Closed)
-                    {
-                        await CreateConnectionWithDatabase();
-                    }
-                    string query = @"  UPDATE UserSessions 
+                string query = @"  UPDATE UserSessions 
                                            SET IsActive = 0 
                                            WHERE SessionId = @SessionId;
                                            UPDATE Users
                                            SET session=@session,
                                            ip_address=@ip_address
                                            WHERE fullname LIKE @fullname;";
-                    using var cm = new SqlCommand(query, connection);
+                try
+                {
+                    if (_connection == null || _connection.State == ConnectionState.Closed)
+                    {
+                        await ConnectToTheDatabase();
+                    }
+                    using var cm = new SqlCommand(query, _connection);
                     cm.Parameters.AddWithValue("@SessionId", _sessionId);
                     cm.Parameters.AddWithValue("@session", session);
                     cm.Parameters.AddWithValue("@ip_address", "");
@@ -361,6 +363,7 @@ namespace ServiceDesk.Forms
                     await cm.ExecuteNonQueryAsync();
                     await Logger.Log(_fullname, " logged out of the system ");
                     _isActiveUser = false;
+                    _connection.Close();
                 }
                 catch (Exception ex)
                 {
@@ -374,10 +377,9 @@ namespace ServiceDesk.Forms
             await Logout(Dns.GetHostName());
             Application.Exit();
         }
-        private async void BtnLogOut_Click(object sender, EventArgs e)
+        private void BtnLogOut_Click(object sender, EventArgs e)
         {
             this.Close();
-            await Logout();
             CredentialManager.RemoveCredentials(_fullname);
             Application.Restart();
         }

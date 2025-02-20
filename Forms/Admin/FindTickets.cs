@@ -1,6 +1,7 @@
 ﻿using ServiceDesk.Class;
 using System;
 using System.Data;
+using System.Data.Common;
 using System.Data.SqlClient;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -11,11 +12,10 @@ namespace ServiceDesk.Forms
 {
     public partial class FindTickets : Form
     {
-        private readonly Connect connect = Connect.Instance;
         private Main _mainMenu;
         private readonly string _fullname = default;
-        private SqlConnection connection_inventory { get; set; } = null;
-        private SqlConnection connection { get; set; } = null;
+        private SqlConnection _connection_servicedesk { get; set; } = null;
+        private SqlConnection _connection_inventory { get; set; } = null;
         public FindTickets(string fullname,Main mainMenu,out FindTickets findTickets)
         {
             InitializeComponent();
@@ -25,23 +25,28 @@ namespace ServiceDesk.Forms
             _ = LoadUsers();
             _ = LoadDepartments();
         }
-        private async Task CreateConnectionWithDatabase()
+        private async Task ConnectToTheServiceDeskDatabase()
         {
-            if (connection == null)
+            if (_connection_servicedesk == null)
             {
-                connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId).ConfigureAwait(false);
+                _connection_servicedesk = await ConnectionDatabase.ConnectToTheServer(_mainMenu._sessionId);
+                await _connection_servicedesk.OpenAsync();
             }
-            await connection.OpenAsync();
+            if (_connection_servicedesk.State == ConnectionState.Closed)
+            {
+                await _connection_servicedesk.OpenAsync();
+            }
         }
-        private async Task CreateConnectionWithInventory()
+        private async Task ConnectToTheInventoryDatabase()
         {
-            if (connection_inventory == null)
+            if (_connection_inventory == null)
             {
-                connection_inventory = await connect.EstablishConnectionWithInventoryAsync().ConfigureAwait(false);
+                _connection_inventory = ConnectionDatabase.ConnectToTheInventoryServer();
+                await _connection_inventory.OpenAsync();
             }
-            if (connection_inventory.State == ConnectionState.Closed)
+            if (_connection_inventory.State == ConnectionState.Closed)
             {
-                await connection_inventory.OpenAsync();
+                await _connection_inventory.OpenAsync();
             }
         }
         private string RemoveStringFromTime(string text)
@@ -71,20 +76,21 @@ namespace ServiceDesk.Forms
         }
         private async Task LoadUsers()
         {
+            cmbUserSearch.Items.Clear();
             try
             {
-                cmbUserSearch.Items.Clear();
-                using var cm = new SqlCommand("SELECT fullname FROM Users WHERE type=@type ORDER BY fullname ASC", connection);
-                if (connection is null || connection.State == ConnectionState.Closed)
+                if (_connection_servicedesk == null || _connection_servicedesk.State == ConnectionState.Closed)
                 {
-                    await CreateConnectionWithDatabase();
+                    await ConnectToTheServiceDeskDatabase();
                 }
+                using var cm = new SqlCommand("SELECT fullname FROM Users WHERE type=@type ORDER BY fullname ASC", _connection_servicedesk);
                 cm.Parameters.AddWithValue("@type", "User");
                 using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
                 while (await dr.ReadAsync())
                 {
                     cmbUserSearch.Items.Add(dr["fullname"].ToString());
                 }
+                _connection_servicedesk?.Close();
             }
             catch (Exception ex)
             {
@@ -96,16 +102,17 @@ namespace ServiceDesk.Forms
         {
             try
             {
-                if (connection_inventory is null || connection_inventory.State == ConnectionState.Closed)
+                if (_connection_inventory == null || _connection_inventory.State == ConnectionState.Closed)
                 {
-                    await CreateConnectionWithInventory();
+                    await ConnectToTheInventoryDatabase();
                 }
-                using var cm = new SqlCommand("SELECT dname FROM Department ORDER BY dname ASC", connection);
+                using var cm = new SqlCommand("SELECT dname FROM Department ORDER BY dname ASC", _connection_inventory);
                 using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
                 while (await dr.ReadAsync())
                 {
                     cmbDepartmentSearch.Items.Add(dr["dname"].ToString());
                 }
+                _connection_inventory?.Close();
             }
             catch (Exception ex)
             {
@@ -171,11 +178,11 @@ namespace ServiceDesk.Forms
                                 OR taken_time LIKE @searchText)
                                 ORDER BY ID desc";
                 }
-                if (connection is null || connection.State == ConnectionState.Closed)
+                if (_connection_servicedesk == null || _connection_servicedesk.State == ConnectionState.Closed)
                 {
-                    await CreateConnectionWithDatabase();
+                    await ConnectToTheServiceDeskDatabase();
                 }
-                using var cm = new SqlCommand(query, connection);
+                using var cm = new SqlCommand(query, _connection_servicedesk);
                 cm.Parameters.AddWithValue("@dep_name", cmbDepartmentSearch.Text);
                 cm.Parameters.AddWithValue("@fromDate", _mainMenu.fromDate);
                 cm.Parameters.AddWithValue("@toDate", _mainMenu.toDate);
@@ -252,11 +259,11 @@ namespace ServiceDesk.Forms
                                 OR taken_time LIKE @searchText)
                                 ORDER BY ID DESC";
                 }
-                if (connection is null || connection.State == ConnectionState.Closed)
+                if (_connection_servicedesk == null || _connection_servicedesk.State == ConnectionState.Closed)
                 {
-                    await CreateConnectionWithDatabase();
+                    await ConnectToTheServiceDeskDatabase();
                 }
-                using var cm = new SqlCommand(query, connection);
+                using var cm = new SqlCommand(query, _connection_servicedesk);
                 cm.Parameters.AddWithValue("@fullname", $"%{cmbUserSearch.Text}%");
                 cm.Parameters.AddWithValue("@fromDate", _mainMenu.fromDate);
                 cm.Parameters.AddWithValue("@toDate", _mainMenu.toDate);
@@ -276,6 +283,7 @@ namespace ServiceDesk.Forms
                         dr[0].ToString(),
                         dr[1].ToString(),
                         dr[3].ToString(),
+                        dr[4].ToString(),
                         dr[5].ToString(), 
                         dr[6].ToString(), 
                         dr[7].ToString(), 
@@ -339,6 +347,7 @@ namespace ServiceDesk.Forms
         {
             if (!string.IsNullOrEmpty(txtSearchCode.Text))
             {
+                var _connection = await ConnectionDatabase.ConnectToTheServer(_mainMenu._sessionId);
                 try
                 {
                     cmbDepartmentSearch.Text = "Select a department";
@@ -372,11 +381,10 @@ namespace ServiceDesk.Forms
                                     OR taken_time LIKE @searchText)
                                     ORDER BY ID desc";
                     }
-                    if (connection is null || connection.State == ConnectionState.Closed)
-                    {
-                        await CreateConnectionWithDatabase();
-                    }
-                    using var cm = new SqlCommand(query, connection);
+                    if (_connection == null) return;
+                    await _connection.OpenAsync();
+                    if (_connection.State == ConnectionState.Closed) return;
+                    using var cm = new SqlCommand(query, _connection);
                     cm.Parameters.AddWithValue("@code1", txtSearchCode.Text);
                     cm.Parameters.AddWithValue("@code2", $"*{txtSearchCode.Text}");
                     cm.Parameters.AddWithValue("@code3", $"#{txtSearchCode.Text}");

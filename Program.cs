@@ -1,6 +1,7 @@
 ﻿using ServiceDesk.Class;
 using ServiceDesk.Forms;
 using System;
+using System.Configuration;
 using System.Data;
 using System.Data.SqlClient;
 using System.Diagnostics;
@@ -25,8 +26,8 @@ namespace ServiceDesk
         private static readonly string MutexName = "ServiceDesk";
         // Get the user's current date format
         static string shortDateFormat = CultureInfo.CurrentCulture.DateTimeFormat.ShortDatePattern;
-        private static readonly Connect connect = Connect.Instance;
         private static string latestversion = default;
+        private static string _connection => ConfigurationManager.ConnectionStrings["ServiceDesk"].ConnectionString;
         /// <summary>
         /// The main entry point for the application.
         /// </summary>
@@ -78,7 +79,7 @@ namespace ServiceDesk
         static string GetLatestVersionAsync()
         {
             string version = string.Empty;
-            using var connection = new SqlConnection(connect.ServicedeskConnection);
+            var connection = new SqlConnection(_connection);
             try
             {
                 connection.Open();
@@ -96,10 +97,6 @@ namespace ServiceDesk
                 Notifications.Error(ex.Message, "Error occured while getting latest version");
                 return GetCurrentVersion();
             }
-            finally
-            {
-                connection.Close();
-            }
         }
         private class LoginSession : CredentialManager
         {
@@ -110,7 +107,7 @@ namespace ServiceDesk
             }
             private static void GettingValidation(string userType, string hostname, string username)
             {
-                using var connection = new SqlConnection(connect.ServicedeskConnection);
+                var connection = new SqlConnection(_connection);
                 try
                 {
                     connection.Open();
@@ -130,10 +127,6 @@ namespace ServiceDesk
                 catch (Exception ex)
                 {
                     Notifications.Error(ex.Message, "Error occured while getting validation");
-                }
-                finally
-                {
-                    connection.Close();
                 }
             }
             public static async void SearchingSession()

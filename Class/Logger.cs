@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Data;
+using System.Data.Common;
 using System.Data.SqlClient;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace ServiceDesk.Class
 {
@@ -10,38 +13,28 @@ namespace ServiceDesk.Class
     {
         private static readonly string logFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logfile.txt");
         private static readonly object FileLock = new();
-        private static readonly Connect connect = Connect.Instance;
-        private static SqlConnection connection { get; set; } = null;
-        private static async Task CreateConnectionWithDatabase()
-        {
-            if (connection == null)
-            {
-                connection = await connect.LoginWithoutAuthentication().ConfigureAwait(false);
-            }
-            await Task.Delay(1);
-        }
         private static async Task WriteAllLog(string fullname, string message)
         {
-            if (connection == null||connection.State==ConnectionState.Closed)
-            {
-                await CreateConnectionWithDatabase();
-            }
             try
             {
-                using SqlCommand cm = new("INSERT INTO Log(Time, Logs, fullname) VALUES(@Time, @Logs, @fullname)", connection);
-                cm.Parameters.AddWithValue("@Time", DateTime.Now);
-                cm.Parameters.AddWithValue("@Logs", message);
-                cm.Parameters.AddWithValue("@fullname", fullname);
-                await cm.ExecuteNonQueryAsync(); // Use async for non-blocking execution
+                using (var _connection = await ConnectionDatabase.ConnectToTheServer())
+                {
+                    await _connection.OpenAsync();
+                    using SqlCommand cm = new("INSERT INTO Log(Time, Logs, fullname) VALUES(@Time, @Logs, @fullname)", _connection);
+                    cm.Parameters.AddWithValue("@Time", DateTime.Now);
+                    cm.Parameters.AddWithValue("@Logs", message);
+                    cm.Parameters.AddWithValue("@fullname", fullname);
+                    await cm.ExecuteNonQueryAsync(); // Use async for non-blocking execution
+                }
             }
             catch
             {
                 // Log the error and notify the user
-                await WriteUserLog("System", "Failed to connect to the database for logging.");
+                WriteUserLog("System", "Failed to connect to the database for logging.");
                 Notifications.Error("An error occurred while logging data.", "Error log");
             }
         }
-        private static async Task WriteUserLog(string fullname, string message)
+        private static void WriteUserLog(string fullname, string message)
         {
             try
             {
@@ -56,15 +49,11 @@ namespace ServiceDesk.Class
             {
                 Notifications.Error($"Error happened while logging : {ex.Message}","Log Problem");
             }
-            finally
-            {
-                await Task.Delay(1);
-            }
         }
         public static async Task Log(string fullname, string message)
         {
             await WriteAllLog(fullname, message);
-            await WriteUserLog(fullname, message);
+            WriteUserLog(fullname, message);
         }
     }
 }

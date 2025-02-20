@@ -8,12 +8,14 @@ using TableDependency.SqlClient;
 using TableDependency.SqlClient.Base.Enums;
 using TableDependency.SqlClient.Base.EventArgs;
 using System.Data;
+using System.Data.Common;
+using System.Threading;
+using System.Configuration;
 
 namespace ServiceDesk.Forms
 {
     public partial class Dashboard : Form
     {
-        private readonly Connect connect = Connect.Instance;
         private readonly static string _firstDayOfMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).ToString("yyyy-MM-dd");
         private readonly string _today = DateTime.Today.ToString("yyyy-MM-dd");
         private string _monday = string.Empty;
@@ -22,27 +24,34 @@ namespace ServiceDesk.Forms
         private SqlTableDependency<TicketTable> _tableDependency_Ticket;
         private SqlTableDependency<StatusTable> _tableDependency_Status;
         private SqlTableDependency<RatingTable> _tableDependency_Rating;
-        private SqlConnection connection { get; set; } = null;
+        private CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
+        private SqlConnection _connection { get; set; } = null;
+        private static string _connection_string { get; set; } = null;
         public Dashboard(string _fullname,Main mainMenu)
         {
             InitializeComponent();
             this._fullname = _fullname;
             _mainMenu = mainMenu;
             _=CalculateDateOfWeek();
-            _= DoItAll(_mainMenu.dateFiltering.Text);
+            _ = DoItAll(_mainMenu.dateFiltering.Text);
+            _ = ConnectDependenciesToDatabase();
             StartTableDependency(); // Start listening for table changes
         }
-        private async Task CreateConnectionWithDatabase()
+        private async Task ConnectToTheDatabase()
         {
-            if (connection == null)
+            if (_connection == null)
             {
-                connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId).ConfigureAwait(false);
+                _connection = await ConnectionDatabase.ConnectToTheServer(_mainMenu._sessionId);
+                await _connection.OpenAsync();
             }
-            await connection.OpenAsync();
+            if (_connection.State == ConnectionState.Closed)
+            {
+                await _connection.OpenAsync();
+            }
         }
         private async Task DoItAll(string date)
         {
-            await CreateConnectionWithDatabase();
+            await ConnectToTheDatabase();
             await CalculateCSATValue();
             await CountOfTicketsForUsers(date);
             await CheckTicketStatus(date);
@@ -70,6 +79,7 @@ namespace ServiceDesk.Forms
         {
             try
             {
+                _connection.Close();
                 await Ratings.CalculateCSAT(_fullname,_mainMenu._sessionId);
                 await GetCSATValue();
             }
@@ -83,11 +93,11 @@ namespace ServiceDesk.Forms
         {
             try
             {
-                if (connection is null || connection.State == ConnectionState.Closed)
+                if (_connection == null || _connection.State == ConnectionState.Closed)
                 {
-                    await CreateConnectionWithDatabase();
+                    await ConnectToTheDatabase();
                 }
-                using var cm = new SqlCommand("SELECT csat FROM Users WHERE fullname LIKE @fullname", connection);
+                using var cm = new SqlCommand("SELECT csat FROM Users WHERE fullname LIKE @fullname", _connection);
                 cm.Parameters.AddWithValue("@fullname", _fullname);
                 using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
                 while (await dr.ReadAsync())
@@ -116,15 +126,13 @@ namespace ServiceDesk.Forms
                 _whichTime = _firstDayOfMonth;
                 progress_All.Maximum_Value = 100;
             }
-            try
+            if (dgvTicketSolvers.Columns.Count == 0)
             {
-                if (dgvTicketSolvers.Columns.Count == 0)
-                {
-                    dgvTicketSolvers.Columns.Add("Solvers", "");
-                    dgvTicketSolvers.Columns.Add("ClosedTickets", "");
-                }
-                dgvTicketSolvers.Rows.Clear();
-                string query= @"WITH SplitFullnames AS (
+                dgvTicketSolvers.Columns.Add("Solvers", "");
+                dgvTicketSolvers.Columns.Add("ClosedTickets", "");
+            }
+            dgvTicketSolvers.Rows.Clear();
+            string query = @"WITH SplitFullnames AS (
                                 SELECT 
                                 LTRIM(RTRIM(value)) AS Fullname, -- Clean up whitespace
                                 Ticket.ID AS TicketID
@@ -143,11 +151,14 @@ namespace ServiceDesk.Forms
                                     AND Status.status = 'closed' 
                                     GROUP BY Users.fullname 
                                     ORDER BY CountOfTickets DESC";
-                if (connection is null || connection.State == ConnectionState.Closed)
+
+            try
+            {
+                if (_connection == null || _connection.State == ConnectionState.Closed)
                 {
-                    await CreateConnectionWithDatabase();
+                    await ConnectToTheDatabase();
                 }
-                using var cm = new SqlCommand(query, connection);
+                using var cm = new SqlCommand(query, _connection);
                 cm.Parameters.AddWithValue("@fromDate", _whichTime);
                 cm.Parameters.AddWithValue("@toDate", _today);
                 using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
@@ -189,17 +200,17 @@ namespace ServiceDesk.Forms
                 _whichTime = _firstDayOfMonth;
                 progress_All.Maximum_Value = 100;
             }
-            try
-            {
-                string query = @"SELECT COUNT(Status.status) AS alltickets
+            string query = @"SELECT COUNT(Status.status) AS alltickets
                             FROM Status
                             INNER JOIN Ticket WITH (NOLOCK) ON Status.ID=Ticket.ID
                             WHERE Status.time BETWEEN @fromDate AND @toDate AND fullname LIKE @fullname";
-                if (connection is null || connection.State == ConnectionState.Closed)
+            try
+            {
+                if (_connection == null || _connection.State == ConnectionState.Closed)
                 {
-                    await CreateConnectionWithDatabase();
+                    await ConnectToTheDatabase();
                 }
-                using var cm = new SqlCommand(query, connection);
+                using var cm = new SqlCommand(query, _connection);
                 cm.Parameters.AddWithValue("@fromDate", _whichTime);
                 cm.Parameters.AddWithValue("@toDate", _today);
                 cm.Parameters.AddWithValue("@fullname", $"%{_fullname}%");
@@ -229,17 +240,17 @@ namespace ServiceDesk.Forms
                 _whichTime = _firstDayOfMonth;
                 progress_pending.Maximum_Value = 100;
             }
-            try
-            {
-                string query = @"SELECT COUNT(Status.status) AS pending
+            string query = @"SELECT COUNT(Status.status) AS pending
                             FROM Status
                             INNER JOIN Ticket WITH (NOLOCK) ON Status.ID=Ticket.ID
                             WHERE Status.status='pending' AND Status.time BETWEEN @fromDate AND @toDate AND fullname LIKE @fullname ";
-                if (connection is null || connection.State == ConnectionState.Closed)
+            try
+            {
+                if (_connection == null || _connection.State == ConnectionState.Closed)
                 {
-                    await CreateConnectionWithDatabase();
+                    await ConnectToTheDatabase();
                 }
-                using var cm = new SqlCommand(query, connection);
+                using var cm = new SqlCommand(query, _connection);
                 cm.Parameters.AddWithValue("@fromDate", _whichTime);
                 cm.Parameters.AddWithValue("@toDate", _today);
                 cm.Parameters.AddWithValue("@fullname", $"%{_fullname}%");
@@ -269,17 +280,17 @@ namespace ServiceDesk.Forms
                 _whichTime = _firstDayOfMonth;
                 progress_resolved.Maximum_Value = 100;
             }
-            try
-            {
-                string query = @"SELECT COUNT(Status.status) AS resolved
+            string query = @"SELECT COUNT(Status.status) AS resolved
                             FROM Status
                             INNER JOIN Ticket WITH (NOLOCK) ON Status.ID=Ticket.ID
                             WHERE (Status.status='resolved' OR Status.status='resolving') AND Status.time BETWEEN @fromDate AND @toDate AND fullname LIKE @fullname ";
-                if (connection is null || connection.State == ConnectionState.Closed)
+            try
+            {
+                if (_connection == null || _connection.State == ConnectionState.Closed)
                 {
-                    await CreateConnectionWithDatabase();
+                    await ConnectToTheDatabase();
                 }
-                using var cm = new SqlCommand(query, connection);
+                using var cm = new SqlCommand(query, _connection);
                 cm.Parameters.AddWithValue("@fromDate", _whichTime);
                 cm.Parameters.AddWithValue("@toDate", _today);
                 cm.Parameters.AddWithValue("@fullname", $"%{_fullname}%");
@@ -309,17 +320,17 @@ namespace ServiceDesk.Forms
                 _whichTime = _firstDayOfMonth;
                 progress_closed.Maximum_Value = 100;
             }
-            try
-            {
-                string query = @"SELECT COUNT(Status.status) AS closed
+            string query = @"SELECT COUNT(Status.status) AS closed
                             FROM Status
                             INNER JOIN Ticket WITH (NOLOCK) ON Status.ID=Ticket.ID
                             WHERE Status.status='closed' AND Status.time BETWEEN @fromDate AND @toDate AND fullname LIKE @fullname ";
-                if (connection is null || connection.State == ConnectionState.Closed)
+            try
+            {
+                if (_connection == null || _connection.State == ConnectionState.Closed)
                 {
-                    await CreateConnectionWithDatabase();
+                    await ConnectToTheDatabase();
                 }
-                using var cm = new SqlCommand(query, connection);
+                using var cm = new SqlCommand(query, _connection);
                 cm.Parameters.AddWithValue("@fromDate", _whichTime);
                 cm.Parameters.AddWithValue("@toDate", _today);
                 cm.Parameters.AddWithValue("@fullname", $"%{_fullname}%");
@@ -401,28 +412,29 @@ namespace ServiceDesk.Forms
             {
                 _firstDate = _firstDayOfMonth;
             }
-            try
+            if (dgvLastTickets.Columns.Count == 0)
             {
-                if (dgvLastTickets.Columns.Count == 0)
-                {
-                    dgvLastTickets.Columns.Add("identify", "ID");
-                    dgvLastTickets.Columns.Add("Date", "Date");
-                    dgvLastTickets.Columns.Add("Status", "Status");
-                    dgvLastTickets.Columns.Add("User", "User");
-                    dgvLastTickets.Columns.Add("Rating", "Rating");
-                    dgvLastTickets.Columns.Add("Message", "Message");
-                }
-                dgvLastTickets.Rows.Clear();
-                string query = @"SELECT Ticket.ID,Ticket.creation_date,Status.status, Ticket.taken_time,Rating.rating,Rating.message
+                dgvLastTickets.Columns.Add("identify", "ID");
+                dgvLastTickets.Columns.Add("Date", "Date");
+                dgvLastTickets.Columns.Add("Status", "Status");
+                dgvLastTickets.Columns.Add("User", "User");
+                dgvLastTickets.Columns.Add("Rating", "Rating");
+                dgvLastTickets.Columns.Add("Message", "Message");
+            }
+            dgvLastTickets.Rows.Clear();
+            string query = @"SELECT Ticket.ID,Ticket.creation_date,Status.status, Ticket.taken_time,Rating.rating,Rating.message
                             FROM Status
                             INNER JOIN Rating WITH (NOLOCK) ON Rating.ID = Status.ID
                             INNER JOIN Ticket WITH (NOLOCK) ON Status.ID=Ticket.ID
                             WHERE Status.time BETWEEN @fromDate AND @toDate AND fullname LIKE @fullname ORDER BY ID DESC";
-                if (connection is null || connection.State == ConnectionState.Closed)
+
+            try
+            {
+                if (_connection == null || _connection.State == ConnectionState.Closed)
                 {
-                    await CreateConnectionWithDatabase();
+                    await ConnectToTheDatabase();
                 }
-                using var cm = new SqlCommand(query, connection);
+                using var cm = new SqlCommand(query, _connection);
                 cm.Parameters.AddWithValue("@fromDate", _firstDate);
                 cm.Parameters.AddWithValue("@toDate", _today);
                 cm.Parameters.AddWithValue("@fullname", $"%{_fullname}%");
@@ -455,17 +467,15 @@ namespace ServiceDesk.Forms
             {
                 _whichTime = _firstDayOfMonth;
             }
-            try
+            if (dgvTasks.Columns.Count == 0)
             {
-                if (dgvTasks.Columns.Count == 0)
-                {
-                    dgvTasks.Columns.Add("identificator", "№");
-                    dgvTasks.Columns.Add("tasks", "Tasks");
-                    dgvTasks.Columns.Add("CountOf", "Count Of");
-                }
-                dgvTasks.Rows.Clear();
-                int i = 1;
-                string query = @"WITH SplitTicketTasks AS (
+                dgvTasks.Columns.Add("identificator", "№");
+                dgvTasks.Columns.Add("tasks", "Tasks");
+                dgvTasks.Columns.Add("CountOf", "Count Of");
+            }
+            dgvTasks.Rows.Clear();
+            int i = 1;
+            string query = @"WITH SplitTicketTasks AS (
                 SELECT 
                 t.ID,
                 t.fullname,
@@ -486,11 +496,14 @@ namespace ServiceDesk.Forms
 				AND tp.fullname LIKE @fullname 
 				GROUP BY tp.fullname, p.ID, p.task 
 				ORDER BY tp.fullname, CountOfTickets DESC";
-                if (connection is null || connection.State == ConnectionState.Closed)
+
+            try
+            {
+                if (_connection == null || _connection.State == ConnectionState.Closed)
                 {
-                    await CreateConnectionWithDatabase();
+                    await ConnectToTheDatabase();
                 }
-                using var cm = new SqlCommand(query, connection);
+                using var cm = new SqlCommand(query, _connection);
                 cm.Parameters.AddWithValue("@fromDate", _whichTime);
                 cm.Parameters.AddWithValue("@toDate", _today);
                 cm.Parameters.AddWithValue("@fullname", _fullname);
@@ -514,82 +527,92 @@ namespace ServiceDesk.Forms
         #region SqlTableDependency
         private async void Dashboard_FormClosing(object sender, FormClosingEventArgs e)
         {
-            await StopTableDependency();
+            await StopTableDependencyAsync();
         }
         private void StartTableDependency()
         {
+            var cts = new CancellationTokenSource(); // Create a new CancellationTokenSource
             Task.Run(async () =>
             {
-                await Task.Delay(1000);
-                await TicketTableDependency();
-                await Task.Delay(1000);
-                await StatusTableDependency();
-                await Task.Delay(1000);
-                await RatingTableDependency();
-            });
-        }
-        private async Task TicketTableDependency()
-        {
-            if (_tableDependency_Ticket == null)
-            {
-                using (_tableDependency_Ticket = new SqlTableDependency<TicketTable>(connect.ServicedeskConnection, "Ticket"))
+                try
                 {
-                    _tableDependency_Ticket.OnChanged += TableDependency_Ticket_OnChanged;
-                    _tableDependency_Ticket.OnError += TableDependency_OnError;
-                    _tableDependency_Ticket.Start();
+                    await TicketTableDependency(cts.Token);
+                    await StatusTableDependency(cts.Token);
+                    await RatingTableDependency(cts.Token);
                 }
-            }
-            else
+                catch (OperationCanceledException ex)
+                {
+                    Notifications.Error("Table dependencies were canceled.", "Error");
+                    await Logger.Log(_fullname, $"Table dependencies were canceled in Dashboard. Error : {ex.Message}");
+                }
+                catch (Exception ex)
+                {
+                    await Logger.Log(_fullname, $"An error occurred in Dashboard: {ex.Message}");
+                }
+            }, cts.Token);
+        }
+        private async Task ConnectDependenciesToDatabase()
+        {
+            _connection_string = ConfigurationManager.ConnectionStrings["ServiceDesk"].ConnectionString;
+            await Task.Delay(1000);
+            _tableDependency_Ticket ??= new SqlTableDependency<TicketTable>(_connection_string, "Ticket");
+            await Task.Delay(1000);
+            _tableDependency_Status ??= new SqlTableDependency<StatusTable>(_connection_string, "Status");
+            await Task.Delay(1000);
+            _tableDependency_Rating ??= new SqlTableDependency<RatingTable>(_connection_string, "Rating");
+        }
+        private async Task TicketTableDependency(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            // Ensure the previous instance is disposed before creating a new one
+            _tableDependency_Ticket?.Stop();
+            _tableDependency_Ticket?.Dispose();
+
+            if (_tableDependency_Ticket != null)
             {
                 _tableDependency_Ticket.OnChanged += TableDependency_Ticket_OnChanged;
                 _tableDependency_Ticket.OnError += TableDependency_OnError;
                 _tableDependency_Ticket.Start();
             }
-            await Task.Delay(1);
+
+            await Task.Delay(1000, cancellationToken); // Simulate work
         }
-        private async Task StatusTableDependency()
+        private async Task StatusTableDependency(CancellationToken cancellationToken)
         {
-            if (_tableDependency_Status == null)
-            {
-                using (_tableDependency_Status = new SqlTableDependency<StatusTable>(connect.ServicedeskConnection, "Status"))
-                {
-                    _tableDependency_Status.OnChanged += TableDependency_Status_OnChanged;
-                    _tableDependency_Status.OnError += TableDependency_OnError;
-                    _tableDependency_Status.Start();
-                }
-            }
-            else
+            cancellationToken.ThrowIfCancellationRequested();
+            // Ensure the previous instance is disposed before creating a new one
+            _tableDependency_Status?.Stop();
+            _tableDependency_Status?.Dispose();
+
+            if (_tableDependency_Status != null)
             {
                 _tableDependency_Status.OnChanged += TableDependency_Status_OnChanged;
                 _tableDependency_Status.OnError += TableDependency_OnError;
                 _tableDependency_Status.Start();
             }
-            await Task.Delay(1);
+            await Task.Delay(1000, cancellationToken); // Simulate work
         }
-        private async Task RatingTableDependency()
+        private async Task RatingTableDependency(CancellationToken cancellationToken)
         {
-            if (_tableDependency_Rating == null)
-            {
-                using (_tableDependency_Rating = new SqlTableDependency<RatingTable>(connect.ServicedeskConnection, "Rating"))
-                {
-                    _tableDependency_Rating.OnChanged += TableDependency_Rating_OnChanged;
-                    _tableDependency_Rating.OnError += TableDependency_OnError;
-                    _tableDependency_Rating.Start();
-                }
-            }
-            else
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Ensure the previous instance is disposed before creating a new one
+            _tableDependency_Rating?.Stop();
+            _tableDependency_Rating?.Dispose();
+
+            if (_tableDependency_Rating != null)
             {
                 _tableDependency_Rating.OnChanged += TableDependency_Rating_OnChanged;
                 _tableDependency_Rating.OnError += TableDependency_OnError;
                 _tableDependency_Rating.Start();
             }
-            await Task.Delay(1);
+            await Task.Delay(1000, cancellationToken); // Simulate work
         }
         private async void TableDependency_OnError(object sender, ErrorEventArgs e)
         {
             await Logger.Log(_fullname, "Error occured while running table dependency in Dashboard");
         }
-        private async void TableDependency_Ticket_OnChanged(object sender, RecordChangedEventArgs<TicketTable> e)
+        private void TableDependency_Ticket_OnChanged(object sender, RecordChangedEventArgs<TicketTable> e)
         {
             if (this.IsDisposed && !this.IsHandleCreated)
                 return;
@@ -597,57 +620,54 @@ namespace ServiceDesk.Forms
             {
                 this.BeginInvoke((MethodInvoker)(async () => await DoItAll(_mainMenu.dateFiltering.Text)));
             }
-            await Task.Delay(1);
         }
-        private async void TableDependency_Status_OnChanged(object sender, RecordChangedEventArgs<StatusTable> e)
+        private void TableDependency_Status_OnChanged(object sender, RecordChangedEventArgs<StatusTable> e)
         {
             if (this.IsDisposed && !this.IsHandleCreated) return;
             if (e.ChangeType != ChangeType.None)
             {
                 this.BeginInvoke((MethodInvoker)(async () => await DoItAll(_mainMenu.dateFiltering.Text)));
             }
-            await Task.Delay(1);
         }
-        private async void TableDependency_Rating_OnChanged(object sender, RecordChangedEventArgs<RatingTable> e)
+        private void TableDependency_Rating_OnChanged(object sender, RecordChangedEventArgs<RatingTable> e)
         {
             if (this.IsDisposed && !this.IsHandleCreated) return;
             if (e.ChangeType != ChangeType.None)
             {
                 this.BeginInvoke((MethodInvoker)(async () => await LastTickets(_mainMenu.dateFiltering.Text)));
             }
-            await Task.Delay(1);
         }
-        private async Task StopTableDependency()
+        private async Task StopTableDependencyAsync()
         {
-            await SafeStop(_tableDependency_Ticket, "Ticket");
-            await SafeStop(_tableDependency_Status, "Status");
-            await SafeStop(_tableDependency_Rating, "Rating");
-        }
-        private async Task SafeStop<T>(SqlTableDependency<T> dependency, string name) where T : class, new()
-        {
-            if (dependency != null)
+            try
             {
-                try
+                if (_cancellationTokenSource != null && !_cancellationTokenSource.IsCancellationRequested)
                 {
-                    dependency.Stop();
-                    dependency.Dispose();
+                    _cancellationTokenSource.Cancel();
                 }
-                catch (ObjectDisposedException)
-                {
-                    await Logger.Log(_fullname, $"{name} dependency is already disposed in Dashboard.");
-                }
-                catch (InvalidOperationException ex)
-                {
-                    await Logger.Log(_fullname, $"Invalid operation while stopping {name} in Dashboard: {ex.Message}");
-                }
-                catch (AggregateException ex)
-                {
-                    await Logger.Log(_fullname, $"AggregateException occurred in {name} in Dashboard: {ex.InnerException?.Message}");
-                }
-                catch (Exception ex)
-                {
-                    await Logger.Log(_fullname, $"Error stopping {name} in Dashboard: {ex.Message}");
-                }
+
+                // Stop and dispose table dependencies
+                _tableDependency_Rating?.Stop();
+                _tableDependency_Rating?.Dispose();
+                _tableDependency_Rating = null;
+
+                _tableDependency_Status?.Stop();
+                _tableDependency_Status?.Dispose();
+                _tableDependency_Status = null;
+
+                _tableDependency_Ticket?.Stop();
+                _tableDependency_Ticket?.Dispose();
+                _tableDependency_Ticket = null;
+            }
+            catch (Exception ex)
+            {
+                Notifications.Error(ex.Message, "Error occurred while stopping table dependencies");
+                await Logger.Log(_fullname, $"Error occurred in Dashboard while stopping table dependencies in Dashboard. Error: {ex.Message}");
+            }
+            finally
+            {
+                _cancellationTokenSource?.Dispose();
+                _cancellationTokenSource = new CancellationTokenSource();
             }
         }
         #endregion

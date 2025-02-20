@@ -1,17 +1,19 @@
 ﻿using System;
+using System.Collections.ObjectModel;
 using System.Data;
+using System.Data.Common;
 using System.Data.SqlClient;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace ServiceDesk.Class
 {
     internal class CredentialManager
     {
-        private static readonly Connect connect = Connect.Instance;
-        private static SqlConnection connection { get; set; } = null;
         private static readonly string _credentialFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "user_credentials.dat");
+        private static SqlConnection _connection { get; set; } = null;
         protected static void SaveCredentials(string username, string userType, string hostname)
         {
             var encryptedData = EncryptData($"{username}:{userType}:{hostname}");
@@ -34,26 +36,39 @@ namespace ServiceDesk.Class
             File.Delete(_credentialFilePath);
             RemoveSession(fullname);
         }
-        private static async Task CreateConnectionWithDatabase()
+        private static async Task ConnectToTheDatabase()
         {
-            if (connection == null)
+            if (_connection == null)
             {
-                connection = await connect.LoginWithoutAuthentication().ConfigureAwait(false);
+                _connection = await ConnectionDatabase.ConnectToTheServer();
+                await _connection.OpenAsync();
             }
-            await connection.OpenAsync();
+            if (_connection.State == ConnectionState.Closed)
+            {
+                await _connection.OpenAsync();
+            }
         }
         public static async void RemoveSession(string fullname)
         {
-            if (connection is null || connection.State == ConnectionState.Closed)
+            try
             {
-                await CreateConnectionWithDatabase();
+                if (_connection == null || _connection.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheDatabase();
+                }
+                string query = @"DELETE FROM UserSessions WHERE UserId LIKE @UserId";
+
+                using var cm = new SqlCommand(query, _connection);
+                cm.Parameters.AddWithValue("@UserId", fullname);
+
+                await cm.ExecuteNonQueryAsync(); // Use the async version for non-blocking execution
+                _connection.Close();
             }
-            string query = @"DELETE FROM UserSessions WHERE UserId LIKE @UserId";
-
-            using var cm = new SqlCommand(query, connection);
-            cm.Parameters.AddWithValue("@UserId", fullname);
-
-            await cm.ExecuteNonQueryAsync(); // Use the async version for non-blocking execution
+            catch (Exception ex)
+            {
+                Notifications.Error(ex.Message, "Error occured while removing session");
+                await Logger.Log(fullname, $" | Error occured in CredentialManager Class while running RemoveSession. | Error is: {ex.Message}");
+            }
         }
         private static string EncryptData(string data)
         {

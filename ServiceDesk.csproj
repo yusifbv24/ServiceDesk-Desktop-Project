@@ -32,8 +32,8 @@
     <SuiteName>166 Logistics</SuiteName>
     <MinimumRequiredVersion>1.0.0.1</MinimumRequiredVersion>
     <OpenBrowserOnPublish>false</OpenBrowserOnPublish>
-    <ApplicationRevision>10</ApplicationRevision>
-    <ApplicationVersion>1.1.0.%2a</ApplicationVersion>
+    <ApplicationRevision>3</ApplicationRevision>
+    <ApplicationVersion>1.2.0.%2a</ApplicationVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <CreateDesktopShortcut>true</CreateDesktopShortcut>
     <PublishWizardCompleted>true</PublishWizardCompleted>
@@ -264,8 +264,8 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Class\ConnectionDatabase.cs" />
     <Compile Include="Class\Ratings.cs" />
-    <Compile Include="Class\Connect.cs" />
     <Compile Include="Class\CredentialManager.cs" />
     <Compile Include="Class\Cryptography.cs" />
     <Compile Include="Class\Logger.cs" />
