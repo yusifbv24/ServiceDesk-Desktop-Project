@@ -1,13 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Data;
-using System.Data.Common;
 using System.Data.SqlClient;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using System.Web.UI.WebControls.WebParts;
 using System.Windows.Forms;
 using ServiceDesk.Class;
 using ServiceDesk.Properties;
