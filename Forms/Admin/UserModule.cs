@@ -1,5 +1,8 @@
 ﻿using ServiceDesk.Class;
 using System;
+using System.Collections.ObjectModel;
+using System.Data;
+using System.Data.Common;
 using System.Data.SqlClient;
 using System.Runtime.InteropServices;
 using System.Security.Policy;
@@ -10,7 +13,6 @@ namespace ServiceDesk.Forms
 {
     public partial class UserModule : Form
     {
-        private readonly Connect connect = Connect.Instance;
         public string status = default;
         public string session = default;
         public string hostname = default;
@@ -19,6 +21,7 @@ namespace ServiceDesk.Forms
         private readonly string _fullname = default;
         private readonly string key = "c24ca5898a4fjwidjwi2bdsn235a1916";
         private Main _mainMenu;
+        private SqlConnection _connection { get; set; } = null;
         private string User_password(string password)
         {
             return Cryptography.EncryptString(key, password);
@@ -30,62 +33,107 @@ namespace ServiceDesk.Forms
             this.KeyPreview = true;
             _mainMenu = mainMenu;
         }
+        private async Task ConnectToTheDatabase()
+        {
+            if (_connection == null)
+            {
+                _connection = await ConnectionDatabase.ConnectToTheServer(_mainMenu._sessionId);
+                await _connection.OpenAsync();
+            }
+            if (_connection.State == ConnectionState.Closed)
+            {
+                await _connection.OpenAsync();
+            }
+        }
         private async Task AddingNewUser()
         {
-            using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-            if (connection is null) return;
-            using var cm = new SqlCommand(@"INSERT INTO 
+            try
+            {
+                if (_connection == null || _connection.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheDatabase();
+                }
+                using var cm = new SqlCommand(@"INSERT INTO 
                         Users(fullname,password,type,session,ip_address,csat)
                         VALUES(@fullname,@password,@type,@session,@ip_address,@csat) 
                         INSERT INTO UserSessions (SessionId, UserId, LastActivity, IsActive)
-                        VALUES (@SessionId, @UserId, GETDATE(), 0) ", connection);
-            cm.Parameters.AddWithValue("@fullname", txtFullname.Text);
-            cm.Parameters.AddWithValue("@password", User_password(txtPassword.Text));
-            cm.Parameters.AddWithValue("@type", cmbUsertype.Text);
-            cm.Parameters.AddWithValue("@session", "");
-            cm.Parameters.AddWithValue("@ip_address", "");
-            cm.Parameters.AddWithValue("@csat", 0);
-            cm.Parameters.AddWithValue("@SessionId", Guid.NewGuid());
-            cm.Parameters.AddWithValue("@UserId", txtFullname.Text);
+                        VALUES (@SessionId, @UserId, GETDATE(), 0) ", _connection);
+                cm.Parameters.AddWithValue("@fullname", txtFullname.Text);
+                cm.Parameters.AddWithValue("@password", User_password(txtPassword.Text));
+                cm.Parameters.AddWithValue("@type", cmbUsertype.Text);
+                cm.Parameters.AddWithValue("@session", "");
+                cm.Parameters.AddWithValue("@ip_address", "");
+                cm.Parameters.AddWithValue("@csat", 0);
+                cm.Parameters.AddWithValue("@SessionId", Guid.NewGuid());
+                cm.Parameters.AddWithValue("@UserId", txtFullname.Text);
 
-            await cm.ExecuteNonQueryAsync();
-            if (cm != null)
+                await cm.ExecuteNonQueryAsync();
+                if (cm != null)
+                {
+                    Notifications.Information("User has been successfully created");
+                    await Logger.Log(txtFullname.Text, $" added a new user with Fullname [{txtFullname.Text}], Password [{User_password(txtPassword.Text)}], User_Type [{cmbUsertype.Text}] to the User Table");
+                }
+                _connection.Close();
+            }
+            catch (Exception ex)
             {
-                Notifications.Information("User has been successfully created");
-                await Logger.Log(txtFullname.Text, $" added a new user with Fullname [{txtFullname.Text}], Password [{User_password(txtPassword.Text)}], User_Type [{cmbUsertype.Text}] to the User Table");
+                Notifications.Error(ex.Message, "Error occured while adding new user");
+                await Logger.Log(_fullname, $" | Error occured in UserModule Panel while running AddingNewUser. | Error is: {ex.Message}");
             }
         }
         private async Task UpdateUser()
         {
-            using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-            if (connection is null) return;
-            using var cm = new SqlCommand("UPDATE Users SET fullname=@fullname,password=@password,type=@type,session=@session,ip_address=@ip_address WHERE ID=@ID", connection);
-            cm.Parameters.AddWithValue("@ID", user_ID);
-            cm.Parameters.AddWithValue("@fullname", txtFullname.Text);
-            cm.Parameters.AddWithValue("@password", User_password(txtPassword.Text));
-            cm.Parameters.AddWithValue("@type", cmbUsertype.Text);
-            cm.Parameters.AddWithValue("@session", hostname);
-            cm.Parameters.AddWithValue("@ip_address", ip_address);
-            await cm.ExecuteNonQueryAsync();
-            if (cm != null)
+            try
             {
-                Notifications.Information("User has been successfully updated");
-                await Logger.Log(txtFullname.Text, $" updated a user with Fullname [{txtFullname.Text}], Password [{User_password(txtPassword.Text)}], User_Type [{cmbUsertype.Text}] to the User Table");
+                if (_connection == null || _connection.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheDatabase();
+                }
+                using var cm = new SqlCommand("UPDATE Users SET fullname=@fullname,password=@password,type=@type,session=@session,ip_address=@ip_address WHERE ID=@ID", _connection);
+                cm.Parameters.AddWithValue("@ID", user_ID);
+                cm.Parameters.AddWithValue("@fullname", txtFullname.Text);
+                cm.Parameters.AddWithValue("@password", User_password(txtPassword.Text));
+                cm.Parameters.AddWithValue("@type", cmbUsertype.Text);
+                cm.Parameters.AddWithValue("@session", hostname);
+                cm.Parameters.AddWithValue("@ip_address", ip_address);
+                await cm.ExecuteNonQueryAsync();
+                if (cm != null)
+                {
+                    Notifications.Information("User has been successfully updated");
+                    await Logger.Log(txtFullname.Text, $" updated a user with Fullname [{txtFullname.Text}], Password [{User_password(txtPassword.Text)}], User_Type [{cmbUsertype.Text}] to the User Table");
+                }
+                _connection.Close();
+            }
+            catch (Exception ex)
+            {
+                Notifications.Error(ex.Message, "Error occured while updating user");
+                await Logger.Log(_fullname, $" | Error occured in UserModule Panel while running UpdateUser. | Error is: {ex.Message}");
             }
         }
         private async Task UpdateUserWithoutChangingPassword()
         {
-            using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-            if (connection is null) return;
-            using var cm = new SqlCommand("UPDATE Users SET fullname=@fullname,type=@type WHERE ID=@ID", connection);
-            cm.Parameters.AddWithValue("@fullname", txtFullname.Text);
-            cm.Parameters.AddWithValue("@type", cmbUsertype.Text);
-            cm.Parameters.AddWithValue("@ID", user_ID);
-            await cm.ExecuteNonQueryAsync();
-            if (cm != null)
+            try
             {
-                Notifications.Information("User has been successfully updated");
-                await Logger.Log(txtFullname.Text, $" updated a user with Fullname [{txtFullname.Text}], Password [{User_password(txtPassword.Text)}], User_Type [{cmbUsertype.Text}] to the User Table");
+                if (_connection == null || _connection.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheDatabase();
+                }
+                using var cm = new SqlCommand("UPDATE Users SET fullname=@fullname,type=@type WHERE ID=@ID", _connection);
+                cm.Parameters.AddWithValue("@fullname", txtFullname.Text);
+                cm.Parameters.AddWithValue("@type", cmbUsertype.Text);
+                cm.Parameters.AddWithValue("@ID", user_ID);
+                await cm.ExecuteNonQueryAsync();
+                if (cm != null)
+                {
+                    Notifications.Information("User has been successfully updated");
+                    await Logger.Log(txtFullname.Text, $" updated a user with Fullname [{txtFullname.Text}], Password [{User_password(txtPassword.Text)}], User_Type [{cmbUsertype.Text}] to the User Table");
+                }
+                _connection.Close();
+            }
+            catch (Exception ex)
+            {
+                Notifications.Error(ex.Message, "Error occured while updating user");
+                await Logger.Log(_fullname, $" | Error occured in UserModule Panel while running UpdateUserWithoutChangingPassword. | Error is: {ex.Message}");
             }
         }
         private async void BtnSave_Click(object sender, EventArgs e)

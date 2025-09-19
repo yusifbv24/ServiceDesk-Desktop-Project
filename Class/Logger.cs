@@ -1,7 +1,11 @@
 ﻿using System;
+using System.Data;
+using System.Data.Common;
 using System.Data.SqlClient;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using System.Windows.Forms;
 
 namespace ServiceDesk.Class
 {
@@ -11,25 +15,26 @@ namespace ServiceDesk.Class
         private static readonly object FileLock = new();
         private static async Task WriteAllLog(string fullname, string message)
         {
-            var connect = Connect.Instance;
-            using var connection = connect.LoginToTheServerAsync();
             try
             {
-                using SqlCommand cm = new("INSERT INTO Log(Time, Logs, fullname) VALUES(@Time, @Logs, @fullname)", connection);
-                cm.Parameters.AddWithValue("@Time", DateTime.Now);
-                cm.Parameters.AddWithValue("@Logs", message);
-                cm.Parameters.AddWithValue("@fullname", fullname);
-                await cm.ExecuteNonQueryAsync(); // Use async for non-blocking execution
+                using (var _connection = await ConnectionDatabase.ConnectToTheServer())
+                {
+                    await _connection.OpenAsync();
+                    using SqlCommand cm = new("INSERT INTO Log(Time, Logs, fullname) VALUES(@Time, @Logs, @fullname)", _connection);
+                    cm.Parameters.AddWithValue("@Time", DateTime.Now);
+                    cm.Parameters.AddWithValue("@Logs", message);
+                    cm.Parameters.AddWithValue("@fullname", fullname);
+                    await cm.ExecuteNonQueryAsync(); // Use async for non-blocking execution
+                }
             }
             catch
             {
                 // Log the error and notify the user
-                await WriteUserLog("System", "Failed to connect to the database for logging.");
+                WriteUserLog("System", "Failed to connect to the database for logging.");
                 Notifications.Error("An error occurred while logging data.", "Error log");
             }
-            if (connection is null) return;
         }
-        private static async Task WriteUserLog(string fullname, string message)
+        private static void WriteUserLog(string fullname, string message)
         {
             try
             {
@@ -44,16 +49,11 @@ namespace ServiceDesk.Class
             {
                 Notifications.Error($"Error happened while logging : {ex.Message}","Log Problem");
             }
-
-            finally
-            {
-                await Task.Delay(1);
-            }
         }
         public static async Task Log(string fullname, string message)
         {
             await WriteAllLog(fullname, message);
-            await WriteUserLog(fullname, message);
+            WriteUserLog(fullname, message);
         }
     }
 }

@@ -1,6 +1,7 @@
 ﻿using ServiceDesk.Class;
 using ServiceDesk.Forms;
 using System;
+using System.Configuration;
 using System.Data;
 using System.Data.SqlClient;
 using System.Diagnostics;
@@ -16,18 +17,17 @@ namespace ServiceDesk
 {
     internal static class Program
     {
-        //[DllImport("user32.dll")]
-        //private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+        [DllImport("user32.dll")]
+        private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
 
-        //[DllImport("user32.dll")]
-        //private static extern bool SetForegroundWindow(IntPtr hWnd);
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
 
-        //private static readonly string MutexName = "ServiceDesk";
+        private static readonly string MutexName = "ServiceDesk";
         // Get the user's current date format
         static string shortDateFormat = CultureInfo.CurrentCulture.DateTimeFormat.ShortDatePattern;
-        private static readonly Connect connect = Connect.Instance;
         private static string latestversion = default;
-
+        private static string _connection => ConfigurationManager.ConnectionStrings["ServiceDesk"].ConnectionString;
         /// <summary>
         /// The main entry point for the application.
         /// </summary>
@@ -43,7 +43,7 @@ namespace ServiceDesk
                                 "Update Available", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            //using var mutex = new Mutex(true, MutexName, out bool isNewInstance);
+            using var mutex = new Mutex(true, MutexName, out bool isNewInstance);
             // Check if it matches "dd.MM.yyyy"
             if (shortDateFormat != "dd.MM.yyyy")
             {
@@ -51,26 +51,26 @@ namespace ServiceDesk
                                 "Date Format Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return; // Exit the application if the format is wrong
             }
-            //if (isNewInstance)
+            if (isNewInstance)
             {
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 LoginSession.SearchingSession();
                 Application.Run();
             }
-            //else
-            //{
-            //    // Bring existing application to foreground
-            //    IntPtr hWnd = FindWindow(null, "Main"); // Replace "MainForm" with your main form's title
-            //    if (hWnd != IntPtr.Zero)
-            //    {
-            //        SetForegroundWindow(hWnd);
-            //    }
-            //    else
-            //    {
-            //        Notifications.Warning("Another instance of this application is already running");
-            //    }
-            //}
+            else
+            {
+                // Bring existing application to foreground
+                IntPtr hWnd = FindWindow(null, "Main"); // Replace "MainForm" with your main form's title
+                if (hWnd != IntPtr.Zero)
+                {
+                    SetForegroundWindow(hWnd);
+                }
+                else
+                {
+                    Notifications.Warning("Another instance of this application is already running");
+                }
+            }
         }
         static string GetCurrentVersion()
         {
@@ -78,20 +78,21 @@ namespace ServiceDesk
         }
         static string GetLatestVersionAsync()
         {
+            string version = string.Empty;
+            var connection = new SqlConnection(_connection);
             try
             {
-                string version = string.Empty;
-                using var connection = connect.LoginToTheServerAsync();
+                connection.Open();
                 string query = "SELECT version FROM Settings";
                 using var cm = new SqlCommand(query, connection);
                 using var dr = cm.ExecuteReader(CommandBehavior.CloseConnection);
-                while(dr.Read())
+                while (dr.Read())
                 {
-                    version= dr["version"].ToString();
+                    version = dr["version"].ToString();
                 }
                 return version;
             }
-            catch(Exception ex) 
+            catch (Exception ex)
             {
                 Notifications.Error(ex.Message, "Error occured while getting latest version");
                 return GetCurrentVersion();
@@ -106,20 +107,27 @@ namespace ServiceDesk
             }
             private static void GettingValidation(string userType, string hostname, string username)
             {
-                using var connection = connect.LoginToTheServerAsync();
-                if (connection is null) return;
-                using var cm = new SqlCommand("SELECT ID FROM Users WHERE type=@type AND session=@session AND fullname LIKE @fullname ", connection);
-                cm.Parameters.AddWithValue("@type", userType);
-                cm.Parameters.AddWithValue("@session", hostname);
-                cm.Parameters.AddWithValue("@fullname", username);
-                using var dr = cm.ExecuteReader(CommandBehavior.CloseConnection);
-                if (dr.HasRows)
+                var connection = new SqlConnection(_connection);
+                try
                 {
-                    var loginTitle = new LoginTitle(userType, username);
-                    loginTitle.Show();
+                    connection.Open();
+                    using var cm = new SqlCommand("SELECT ID FROM Users WHERE type=@type AND session=@session AND fullname LIKE @fullname ", connection);
+                    cm.Parameters.AddWithValue("@type", userType);
+                    cm.Parameters.AddWithValue("@session", hostname);
+                    cm.Parameters.AddWithValue("@fullname", username);
+                    using var dr = cm.ExecuteReader(CommandBehavior.CloseConnection);
+                    if (dr.HasRows)
+                    {
+                        var loginTitle = new LoginTitle(userType, username);
+                        loginTitle.Show();
+                    }
+                    else
+                        CallLoginForm();
                 }
-                else
-                    CallLoginForm();
+                catch (Exception ex)
+                {
+                    Notifications.Error(ex.Message, "Error occured while getting validation");
+                }
             }
             public static async void SearchingSession()
             {
@@ -141,7 +149,7 @@ namespace ServiceDesk
                 }
                 catch (Exception ex)
                 {
-                    Notifications.Error($"{ex.Message}","Error occured while searching session");
+                    Notifications.Error($"{ex.Message}", "Error occured while searching session");
                     await Logger.Log("System", $" |  Error occured in Program Class while running SearchingSession. | Error is: {ex.Message}");
                 }
             }

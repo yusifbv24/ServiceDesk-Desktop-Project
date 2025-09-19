@@ -4,19 +4,19 @@ using System.Data.SqlClient;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using static ServiceDesk.Class.TableDependencies;
-using TableDependency.SqlClient.Base.Enums;
-using TableDependency.SqlClient.Base.EventArgs;
-using TableDependency.SqlClient;
+using System.Data;
+using System.Data.Common;
+using System.Collections.ObjectModel;
+using System.Threading;
 
 namespace ServiceDesk.Forms
 {
     public partial class TaskModule : Form
     {
-        private readonly Connect connect = Connect.Instance;
         private readonly string _fullname = default;
         public string problemID = default;
         private Main _mainMenu;
+        private SqlConnection _connection { get; set; } = null;
         public TaskModule(string fullname, Main mainMenu)
         {
             InitializeComponent();
@@ -24,52 +24,72 @@ namespace ServiceDesk.Forms
             this.KeyPreview = true;
             _mainMenu = mainMenu;
         }
+        private async Task ConnectToTheDatabase()
+        {
+            if (_connection == null)
+            {
+                _connection = await ConnectionDatabase.ConnectToTheServer(_mainMenu._sessionId);
+                await _connection.OpenAsync();
+            }
+            if (_connection.State == ConnectionState.Closed)
+            {
+                await _connection.OpenAsync();
+            }
+        }
         private void BtnExit_Click(object sender, EventArgs e) => this.Dispose();
         private void BtnClear_Click(object sender, EventArgs e) => txtTask.Text = string.Empty;
         private async Task SaveTask()
         {
-            try
+            if (string.IsNullOrWhiteSpace(txtTask.Text))
             {
-                if (string.IsNullOrWhiteSpace(txtTask.Text))
+                Notifications.Warning("Please fill!");
+                return;
+            }
+            if (MessageBox.Show("Are you sure you want to save this task?", "Saving Record", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            {
+                try
                 {
-                    Notifications.Warning("Please fill!");
-                    return;
-                }
-                if (MessageBox.Show("Are you sure you want to save this task?", "Saving Record", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                {
-                    using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                    if(connection is null) return;
-                    using var cm = new SqlCommand("INSERT INTO Tasks(task)VALUES(@task)", connection);
+                    if (_connection == null || _connection.State == ConnectionState.Closed)
+                    {
+                        await ConnectToTheDatabase();
+                    }
+                    using var cm = new SqlCommand("INSERT INTO Tasks(task)VALUES(@task)", _connection);
                     cm.Parameters.AddWithValue("@task", txtTask.Text);
                     await cm.ExecuteNonQueryAsync();
                     if (cm != null)
                     {
                         Notifications.Information("Task has been successfully saved");
                         await Logger.Log(_fullname, $" added a new task with Task_Name [{txtTask.Text}] to the Task Table");
-                        this.Close();
                     }
+                    _connection.Close();
                 }
-            }
-            catch (Exception ex)
-            {
-                Notifications.Error(ex.Message,"Error saving a task");
-                await Logger.Log(_fullname, $" Error occured in Task Table when saving a task with Task_name [{txtTask.Text}] | Error: {ex.Message}");
+                catch (Exception ex)
+                {
+                    Notifications.Error(ex.Message, "Error saving a task");
+                    await Logger.Log(_fullname, $" Error occured in Task Table when saving a task with Task_name [{txtTask.Text}] | Error: {ex.Message}");
+                }
+                finally
+                {
+                    this.Close();
+                }
             }
         }
         private async Task UpdateTask()
         {
-            try
+            if (string.IsNullOrEmpty(txtTask.Text))
             {
-                if (string.IsNullOrEmpty(txtTask.Text))
+                Notifications.Warning("Please fill");
+                return;
+            }
+            if (MessageBox.Show("Are you sure you want to update this task?", "Update Record", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            {
+                try
                 {
-                    Notifications.Warning("Please fill");
-                    return;
-                }
-                if (MessageBox.Show("Are you sure you want to update this task?", "Update Record", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                {
-                    using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                    if (connection is null) return;
-                    using var cm = new SqlCommand("UPDATE Tasks SET task = @task WHERE ID=@ID", connection);
+                    if (_connection == null || _connection.State == ConnectionState.Closed)
+                    {
+                        await ConnectToTheDatabase();
+                    }
+                    using var cm = new SqlCommand("UPDATE Tasks SET task = @task WHERE ID=@ID", _connection);
                     cm.Parameters.AddWithValue("@ID", Convert.ToInt32(problemID));
                     cm.Parameters.AddWithValue("@task", txtTask.Text);
                     await cm.ExecuteNonQueryAsync();
@@ -77,14 +97,18 @@ namespace ServiceDesk.Forms
                     {
                         Notifications.Information("Task has been successfully updated!");
                         await Logger.Log(_fullname, $" updated a new task with Task_Name [{txtTask.Text} to the Task Table");
-                        this.Dispose();
                     }
+                    _connection.Close();
                 }
-            }
-            catch (Exception ex)
-            {
-                Notifications.Error($"{ex.Message}","Error updating a task");
-                await Logger.Log(_fullname, $" Error occured in Task Table when updating a task with Task Name [{txtTask.Text}] | Error: {ex.Message}");
+                catch (Exception ex)
+                {
+                    Notifications.Error($"{ex.Message}", "Error updating a task");
+                    await Logger.Log(_fullname, $" Error occured in Task Table when updating a task with Task Name [{txtTask.Text}] | Error: {ex.Message}");
+                }
+                finally
+                {
+                    this.Close();
+                }
             }
         }
         private void BtnSave_Click(object sender, EventArgs e) => _ = SaveTask();

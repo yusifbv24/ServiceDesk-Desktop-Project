@@ -1,6 +1,8 @@
 ﻿using ServiceDesk.Class;
 using System;
+using System.Collections.ObjectModel;
 using System.Data;
+using System.Data.Common;
 using System.Data.SqlClient;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -9,46 +11,68 @@ namespace ServiceDesk.Forms
 {
     public partial class Feedback : Form
     {
-        private readonly Connect connect = Connect.Instance;
         private readonly string _fullname = default;
         private Guid _sessionId;
         public string ID = default;
-        private SqlConnection connection { get; set; } = null;
+        private SqlConnection _connection { get; set; } = null;
         public Feedback(string _fullname,Guid sessionId)
         {
             InitializeComponent();
             this._fullname = _fullname;
             _sessionId = sessionId;
         }
-        private async Task CreateConnectionWithDatabase()
+        private async Task ConnectToTheDatabase()
         {
-            if (connection == null || connection.State == ConnectionState.Closed)
+            if (_connection == null)
             {
-                connection = await connect.EstablishConnectionWithServiceDeskAsync(_sessionId).ConfigureAwait(false);
+                _connection = await ConnectionDatabase.ConnectToTheServer(_sessionId);
+                await _connection.OpenAsync();
+            }
+            if (_connection.State == ConnectionState.Closed)
+            {
+                await _connection.OpenAsync();
             }
         }
         private async Task UpdateDatabaseWithoutRating()
         {
-            if (connection is null || connection.State == ConnectionState.Closed)
+            try
             {
-                await CreateConnectionWithDatabase();
+                if (_connection == null || _connection.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheDatabase();
+                }
+                using var cm = new SqlCommand("UPDATE Rating SET message=@message WHERE ID=@ID", _connection);
+                cm.Parameters.AddWithValue("@ID", ID);
+                cm.Parameters.AddWithValue("@message", txtMessage.Text);
+                await cm.ExecuteNonQueryAsync();
+                _connection.Close();
             }
-            using var cm = new SqlCommand("UPDATE Rating SET message=@message WHERE ID=@ID", connection);
-            cm.Parameters.AddWithValue("@ID", ID);
-            cm.Parameters.AddWithValue("@message", txtMessage.Text);
-            await cm.ExecuteNonQueryAsync();
+            catch (Exception ex)
+            {
+                Notifications.Error(ex.Message, "Error occured while updating feedback");
+                await Logger.Log(_fullname, $" | Error occured in Feedback Panel while running UpdateDatabaseWithoutRating. | Error is: {ex.Message}");
+            }
         }
         private async Task UpdateDatabaseWithRatingValue()
         {
-            if (connection is null || connection.State == ConnectionState.Closed)
+            try
             {
-                await CreateConnectionWithDatabase();
+                if (_connection == null || _connection.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheDatabase();
+                }
+                using var cm = new SqlCommand("UPDATE Rating SET rating=@rating,message=@message WHERE ID=@ID", _connection);
+                cm.Parameters.AddWithValue("@ID", ID);
+                cm.Parameters.AddWithValue("@rating", Rating.Value);
+                cm.Parameters.AddWithValue("@message", txtMessage.Text);
+                await cm.ExecuteNonQueryAsync();
+                _connection.Close();
             }
-            using var cm = new SqlCommand("UPDATE Rating SET rating=@rating,message=@message WHERE ID=@ID", connection);
-            cm.Parameters.AddWithValue("@ID", ID);
-            cm.Parameters.AddWithValue("@rating", Rating.Value);
-            cm.Parameters.AddWithValue("@message", txtMessage.Text);
-            await cm.ExecuteNonQueryAsync();
+            catch (Exception ex)
+            {
+                Notifications.Error(ex.Message, "Error occured while updating feedback");
+                await Logger.Log(_fullname, $" | Error occured in Feedback Panel while running UpdateDatabaseWithRatingValue. | Error is: {ex.Message}");
+            }
         }
         private async void BtnApply_Click(object sender, EventArgs e)
         {
@@ -73,7 +97,7 @@ namespace ServiceDesk.Forms
             }
             finally
             {
-                this.Dispose();
+                this.Close();
             }
         }
         private void BtnExit_Click(object sender, EventArgs e) => this.Dispose();

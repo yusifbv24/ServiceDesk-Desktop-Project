@@ -1,6 +1,8 @@
 ﻿using ServiceDesk.Class;
 using System;
+using System.Collections.ObjectModel;
 using System.Data;
+using System.Data.Common;
 using System.Data.SqlClient;
 using System.Drawing;
 using System.Net;
@@ -19,7 +21,7 @@ namespace ServiceDesk.Forms
                 SaveCredentials(username, userType, hostname);
             }
         }
-        private readonly Connect connect = Connect.Instance;
+        private SqlConnection _connection { get; set; } = null;
         private string _userType;
         private string _fullName;
         private string _haveSession;
@@ -29,14 +31,28 @@ namespace ServiceDesk.Forms
             InitializeComponent();
             _ = LoadFullname();
         }
+        private async Task ConnectToTheDatabase()
+        {
+            if (_connection == null)
+            {
+                _connection = await ConnectionDatabase.ConnectToTheServer();
+                await _connection.OpenAsync();
+            }
+            if (_connection.State == ConnectionState.Closed)
+            {
+                await _connection.OpenAsync();
+            }
+        }
         private async Task LoadFullname()
         {
+            txtUsername.Items.Clear();
             try
             {
-                txtUsername.Items.Clear();
-                using var connection =  connect.LoginToTheServerAsync();
-                if (connection is null) return;
-                using var cm = new SqlCommand("SELECT fullname FROM Users", connection);
+                if (_connection == null || _connection.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheDatabase();
+                }
+                using var cm = new SqlCommand("SELECT fullname FROM Users", _connection);
                 using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
                 while (await dr.ReadAsync())
                 {
@@ -53,9 +69,11 @@ namespace ServiceDesk.Forms
         {
             try
             {
-                using var connection = connect.LoginToTheServerAsync();
-                if (connection is null) return;
-                using var cm = new SqlCommand("SELECT session FROM Users WHERE fullname LIKE @fullname", connection);
+                if (_connection == null || _connection.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheDatabase();
+                }
+                using var cm = new SqlCommand("SELECT session FROM Users WHERE fullname LIKE @fullname", _connection);
                 cm.Parameters.AddWithValue("@fullname", txtUsername.Text);
                 using SqlDataReader dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
                 while (await dr.ReadAsync())
@@ -88,40 +106,46 @@ namespace ServiceDesk.Forms
         {
             await CheckSession();
             var user_password = Cryptography.EncryptString(key, txtPassword.Text);
-            using var connection = connect.LoginToTheServerAsync();
-            if (connection is null)
+            var _connection = await ConnectionDatabase.ConnectToTheServer();
+            try
             {
-                MessageBox.Show("Unable to connect to the server.", "Connection Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-            using (var cm = new SqlCommand("SELECT type FROM Users WHERE fullname LIKE @fullname AND password = @password", connection))
-            {
-                cm.Parameters.AddWithValue("@fullname", txtUsername.Text);
-                cm.Parameters.AddWithValue("@password", user_password);
+                if (_connection == null) return;
+                await _connection.OpenAsync();
+                if (_connection.State == ConnectionState.Closed) return;
+                using (var cm = new SqlCommand("SELECT type FROM Users WHERE fullname LIKE @fullname AND password = @password", _connection))
+                {
+                    cm.Parameters.AddWithValue("@fullname", txtUsername.Text);
+                    cm.Parameters.AddWithValue("@password", user_password);
 
-                using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
-                if (await dr.ReadAsync()) // Move to the first row
-                {
-                    _fullName = txtUsername.Text;
-                    _userType = dr["type"].ToString();
+                    using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+                    if (await dr.ReadAsync()) // Move to the first row
+                    {
+                        _fullName = txtUsername.Text;
+                        _userType = dr["type"].ToString();
+                    }
+                    else
+                    {
+                        MessageBox.Show("Invalid username or password!", "ACCESS DENIED", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        await Logger.Log("System", $" Fullname: [{txtUsername.Text}] attempted to login and failed.");
+                        return;
+                    }
                 }
-                else
+                // Handle active session
+                if (!string.IsNullOrEmpty(_haveSession))
                 {
-                    MessageBox.Show("Invalid username or password!", "ACCESS DENIED", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    await Logger.Log("System", $" Fullname: [{txtUsername.Text}] attempted to login and failed.");
+                    MessageBox.Show($"You are logged in on another computer with this hostname: {_haveSession}", "User Active", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
+                // Call additional login actions
+                CallLoginTitle();
+                // Save login details for auto-login
+                AutoLogin.SaveUserInformation(txtUsername.Text, _userType, Dns.GetHostName());
             }
-            // Handle active session
-            if (!string.IsNullOrEmpty(_haveSession))
+            catch (Exception ex)
             {
-                MessageBox.Show($"You are logged in on another computer with this hostname: {_haveSession}", "User Active", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                Notifications.Error(ex.Message, "Error occured while logging to the system");
+                await Logger.Log(txtUsername.Text, $" | Error occured in Login Panel while running BtnLogin_Click. | Error is: {ex.Message}");
             }
-            // Call additional login actions
-            CallLoginTitle();
-            // Save login details for auto-login
-            AutoLogin.SaveUserInformation(txtUsername.Text, _userType, Dns.GetHostName());
         }
         private void BtnMinimize_Click(object sender, EventArgs e)
         {

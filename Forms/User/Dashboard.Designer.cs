@@ -35,6 +35,7 @@
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle4 = new System.Windows.Forms.DataGridViewCellStyle();
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle5 = new System.Windows.Forms.DataGridViewCellStyle();
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle6 = new System.Windows.Forms.DataGridViewCellStyle();
+            System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle3 = new System.Windows.Forms.DataGridViewCellStyle();
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle7 = new System.Windows.Forms.DataGridViewCellStyle();
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle8 = new System.Windows.Forms.DataGridViewCellStyle();
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle14 = new System.Windows.Forms.DataGridViewCellStyle();
@@ -52,12 +53,13 @@
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle23 = new System.Windows.Forms.DataGridViewCellStyle();
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle19 = new System.Windows.Forms.DataGridViewCellStyle();
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle20 = new System.Windows.Forms.DataGridViewCellStyle();
-            System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle3 = new System.Windows.Forms.DataGridViewCellStyle();
             this.panelCSAT = new System.Windows.Forms.Panel();
             this.lblCSAT = new System.Windows.Forms.Label();
             this.CSATcalculator = new Bunifu.Framework.UI.BunifuGauge();
             this.panelTicketSolvers = new System.Windows.Forms.Panel();
             this.dgvTicketSolvers = new System.Windows.Forms.DataGridView();
+            this.Solvers = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.ClosedTickets = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.lblTicketSolvers = new System.Windows.Forms.Label();
             this.panel_Tickets_status = new System.Windows.Forms.Panel();
             this.labelOverAll = new System.Windows.Forms.Label();
@@ -85,17 +87,15 @@
             this.lblLastTickets = new System.Windows.Forms.Label();
             this.panelTopProblems = new System.Windows.Forms.Panel();
             this.dgvTasks = new System.Windows.Forms.DataGridView();
+            this.identificator = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.tasks = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.CountOf = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.lblTopProblems = new System.Windows.Forms.Label();
             this.guna2Elipse_CSAT = new Guna.UI2.WinForms.Guna2Elipse(this.components);
             this.guna2Elipse_Status = new Guna.UI2.WinForms.Guna2Elipse(this.components);
             this.guna2Elipse_Solvers = new Guna.UI2.WinForms.Guna2Elipse(this.components);
             this.guna2Elipse_Problems = new Guna.UI2.WinForms.Guna2Elipse(this.components);
             this.guna2Elipse_Information = new Guna.UI2.WinForms.Guna2Elipse(this.components);
-            this.identificator = new System.Windows.Forms.DataGridViewTextBoxColumn();
-            this.tasks = new System.Windows.Forms.DataGridViewTextBoxColumn();
-            this.CountOf = new System.Windows.Forms.DataGridViewTextBoxColumn();
-            this.Solvers = new System.Windows.Forms.DataGridViewTextBoxColumn();
-            this.ClosedTickets = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.panelCSAT.SuspendLayout();
             this.panelTicketSolvers.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.dgvTicketSolvers)).BeginInit();
@@ -157,7 +157,7 @@
             this.panelTicketSolvers.Size = new System.Drawing.Size(338, 282);
             this.panelTicketSolvers.TabIndex = 83;
             // 
-            // dgvRating
+            // dgvTicketSolvers
             // 
             this.dgvTicketSolvers.AllowUserToAddRows = false;
             this.dgvTicketSolvers.AllowUserToDeleteRows = false;
@@ -201,7 +201,7 @@
             this.dgvTicketSolvers.ImeMode = System.Windows.Forms.ImeMode.Off;
             this.dgvTicketSolvers.Location = new System.Drawing.Point(20, 46);
             this.dgvTicketSolvers.Margin = new System.Windows.Forms.Padding(0);
-            this.dgvTicketSolvers.Name = "dgvRating";
+            this.dgvTicketSolvers.Name = "dgvTicketSolvers";
             this.dgvTicketSolvers.ReadOnly = true;
             this.dgvTicketSolvers.RowHeadersBorderStyle = System.Windows.Forms.DataGridViewHeaderBorderStyle.None;
             dataGridViewCellStyle5.Font = new System.Drawing.Font("Inter", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
@@ -224,6 +224,29 @@
             this.dgvTicketSolvers.ShowEditingIcon = false;
             this.dgvTicketSolvers.Size = new System.Drawing.Size(295, 224);
             this.dgvTicketSolvers.TabIndex = 85;
+            // 
+            // Solvers
+            // 
+            this.Solvers.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.Fill;
+            dataGridViewCellStyle3.Alignment = System.Windows.Forms.DataGridViewContentAlignment.MiddleLeft;
+            dataGridViewCellStyle3.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
+            this.Solvers.DefaultCellStyle = dataGridViewCellStyle3;
+            this.Solvers.HeaderText = "";
+            this.Solvers.MinimumWidth = 100;
+            this.Solvers.Name = "Solvers";
+            this.Solvers.ReadOnly = true;
+            this.Solvers.Resizable = System.Windows.Forms.DataGridViewTriState.False;
+            this.Solvers.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.NotSortable;
+            // 
+            // ClosedTickets
+            // 
+            this.ClosedTickets.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.AllCells;
+            this.ClosedTickets.HeaderText = "";
+            this.ClosedTickets.MinimumWidth = 6;
+            this.ClosedTickets.Name = "ClosedTickets";
+            this.ClosedTickets.ReadOnly = true;
+            this.ClosedTickets.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.Programmatic;
+            this.ClosedTickets.Width = 6;
             // 
             // lblTicketSolvers
             // 
@@ -690,6 +713,39 @@
             this.dgvTasks.Size = new System.Drawing.Size(322, 366);
             this.dgvTasks.TabIndex = 87;
             // 
+            // identificator
+            // 
+            this.identificator.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.AllCells;
+            dataGridViewCellStyle19.Alignment = System.Windows.Forms.DataGridViewContentAlignment.MiddleCenter;
+            dataGridViewCellStyle19.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
+            this.identificator.DefaultCellStyle = dataGridViewCellStyle19;
+            this.identificator.HeaderText = "№";
+            this.identificator.MinimumWidth = 20;
+            this.identificator.Name = "identificator";
+            this.identificator.ReadOnly = true;
+            this.identificator.Width = 47;
+            // 
+            // tasks
+            // 
+            this.tasks.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.Fill;
+            dataGridViewCellStyle20.Alignment = System.Windows.Forms.DataGridViewContentAlignment.TopLeft;
+            dataGridViewCellStyle20.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
+            this.tasks.DefaultCellStyle = dataGridViewCellStyle20;
+            this.tasks.HeaderText = "Tasks";
+            this.tasks.MinimumWidth = 150;
+            this.tasks.Name = "tasks";
+            this.tasks.ReadOnly = true;
+            // 
+            // CountOf
+            // 
+            this.CountOf.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.AllCells;
+            this.CountOf.HeaderText = "Count of";
+            this.CountOf.MinimumWidth = 80;
+            this.CountOf.Name = "CountOf";
+            this.CountOf.ReadOnly = true;
+            this.CountOf.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.NotSortable;
+            this.CountOf.Width = 80;
+            // 
             // lblTopProblems
             // 
             this.lblTopProblems.Anchor = System.Windows.Forms.AnchorStyles.Top;
@@ -726,62 +782,6 @@
             // 
             this.guna2Elipse_Information.BorderRadius = 20;
             this.guna2Elipse_Information.TargetControl = this.panelLastTickets;
-            // 
-            // identificator
-            // 
-            this.identificator.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.AllCells;
-            dataGridViewCellStyle19.Alignment = System.Windows.Forms.DataGridViewContentAlignment.MiddleCenter;
-            dataGridViewCellStyle19.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
-            this.identificator.DefaultCellStyle = dataGridViewCellStyle19;
-            this.identificator.HeaderText = "№";
-            this.identificator.MinimumWidth = 20;
-            this.identificator.Name = "identificator";
-            this.identificator.ReadOnly = true;
-            this.identificator.Width = 47;
-            // 
-            // tasks
-            // 
-            this.tasks.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.Fill;
-            dataGridViewCellStyle20.Alignment = System.Windows.Forms.DataGridViewContentAlignment.TopLeft;
-            dataGridViewCellStyle20.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
-            this.tasks.DefaultCellStyle = dataGridViewCellStyle20;
-            this.tasks.HeaderText = "Tasks";
-            this.tasks.MinimumWidth = 150;
-            this.tasks.Name = "tasks";
-            this.tasks.ReadOnly = true;
-            // 
-            // CountOf
-            // 
-            this.CountOf.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.AllCells;
-            this.CountOf.HeaderText = "Count of";
-            this.CountOf.MinimumWidth = 80;
-            this.CountOf.Name = "CountOf";
-            this.CountOf.ReadOnly = true;
-            this.CountOf.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.NotSortable;
-            this.CountOf.Width = 80;
-            // 
-            // Solvers
-            // 
-            this.Solvers.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.Fill;
-            dataGridViewCellStyle3.Alignment = System.Windows.Forms.DataGridViewContentAlignment.MiddleLeft;
-            dataGridViewCellStyle3.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
-            this.Solvers.DefaultCellStyle = dataGridViewCellStyle3;
-            this.Solvers.HeaderText = "";
-            this.Solvers.MinimumWidth = 100;
-            this.Solvers.Name = "Solvers";
-            this.Solvers.ReadOnly = true;
-            this.Solvers.Resizable = System.Windows.Forms.DataGridViewTriState.False;
-            this.Solvers.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.NotSortable;
-            // 
-            // ClosedTickets
-            // 
-            this.ClosedTickets.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.AllCells;
-            this.ClosedTickets.HeaderText = "";
-            this.ClosedTickets.MinimumWidth = 6;
-            this.ClosedTickets.Name = "ClosedTickets";
-            this.ClosedTickets.ReadOnly = true;
-            this.ClosedTickets.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.Programmatic;
-            this.ClosedTickets.Width = 6;
             // 
             // Dashboard
             // 

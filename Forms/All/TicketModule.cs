@@ -5,7 +5,6 @@ using System.Data.SqlClient;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
-using System.Web.UI.WebControls.WebParts;
 using System.Windows.Forms;
 using ServiceDesk.Class;
 using ServiceDesk.Properties;
@@ -14,7 +13,6 @@ namespace ServiceDesk.Forms
 {
     public partial class TicketModule : Form
     {
-        private readonly Connect connect = Connect.Instance;
         private readonly string _userType = default;
         private readonly string _fullname = default;
         public int ticketID = default;
@@ -25,6 +23,8 @@ namespace ServiceDesk.Forms
         private string _tasks;
         private string _users;
         private Main _mainMenu;
+        private SqlConnection _connection_servicedesk { get; set; } = null;
+        private SqlConnection _connection_inventory { get; set; } = null;
         public TicketModule(string _fullName,string userType, Main mainMenu)
         {
             InitializeComponent();
@@ -53,82 +53,188 @@ namespace ServiceDesk.Forms
             }
             date.Value= DateTime.Now;
         }
-        private async void LoadInformation()
+        private async Task ConnectToTheServiceDeskDatabase()
         {
-            await LoadTasks();
-            await LoadDepartments();
-            await LoadUsers();
+            if (_connection_servicedesk == null)
+            {
+                _connection_servicedesk = await ConnectionDatabase.ConnectToTheServer(_mainMenu._sessionId);
+                await _connection_servicedesk.OpenAsync();
+            }
+            if (_connection_servicedesk.State == ConnectionState.Closed)
+            {
+                await _connection_servicedesk.OpenAsync();
+            }
+        }
+        private async Task ConnectToTheInventoryDatabase()
+        {
+            if (_connection_inventory == null)
+            {
+                _connection_inventory = ConnectionDatabase.ConnectToTheInventoryServer();
+                await _connection_inventory.OpenAsync();
+            }
+            if (_connection_inventory.State == ConnectionState.Closed)
+            {
+                await _connection_inventory.OpenAsync();
+            }
+        }
+        private void LoadInformation()
+        {
+            Task.Run(async () =>
+            {
+                await ConnectToTheServiceDeskDatabase();
+                await ConnectToTheInventoryDatabase();
+                await LoadTasks();
+                await LoadDepartments();
+                await LoadUsers();
+            });
         }
         private async Task LoadTasks()
         {
+            // Collect tasks in a temporary list
+            List<string> tasks = new List<string>();
             try
             {
-                cmbTask.Items.Clear();
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
-                using var cm = new SqlCommand("SELECT task FROM Tasks", connection);
-                using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+                if (_connection_servicedesk == null || _connection_servicedesk.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheServiceDeskDatabase();
+                }
+                using var cm = new SqlCommand("SELECT task FROM Tasks", _connection_servicedesk);
+                using var dr = await cm.ExecuteReaderAsync();
                 while (await dr.ReadAsync())
                 {
-                    cmbTask.Items.Add(dr["task"].ToString());
+                    tasks.Add(dr["task"].ToString());
                 }
             }
             catch (Exception ex)
             {
                 Notifications.Error(ex.Message, "Error loading tasks");
-                await Logger.Log(_fullname, $" | Error is occured when loading tasks in Ticket Module Panel. | Error is: {ex.Message}");
+                await Logger.Log(_fullname, $" | Error occurred when loading tasks in Ticket Module Panel. | Error is: {ex.Message}");
+            }
+
+            // Now update the UI on the UI thread:
+            if (cmbTask.InvokeRequired)
+            {
+                cmbTask.Invoke(new Action(() =>
+                {
+                    cmbTask.Items.Clear();
+                    foreach (var task in tasks)
+                    {
+                        cmbTask.Items.Add(task);
+                    }
+                }));
+            }
+            else
+            {
+                cmbTask.Items.Clear();
+                foreach (var task in tasks)
+                {
+                    cmbTask.Items.Add(task);
+                }
             }
         }
         private async Task LoadDepartments()
         {
+            // Create a temporary list to hold the department names
+            List<string> departmentNames = new List<string>();
+
             try
             {
-                txtDep.Items.Clear();
-                using var connection = await connect.EstablishConnectionWithInventoryAsync();
-                if (connection is null) return;
-                using var cm = new SqlCommand("SELECT dname FROM Department", connection);
-                using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+                if (_connection_inventory == null || _connection_inventory.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheInventoryDatabase();
+                }
+                using var cm = new SqlCommand("SELECT dname FROM Department", _connection_inventory);
+                using var dr = await cm.ExecuteReaderAsync();
                 while (await dr.ReadAsync())
                 {
-                    txtDep.Items.Add(dr["dname"].ToString());
+                    departmentNames.Add(dr["dname"].ToString());
                 }
             }
             catch (Exception ex)
             {
-                Notifications.Error(ex.Message,"Error loading departments");
-                await Logger.Log(_fullname, $" | Error is occured when loading departments in Ticket Module Panel. | Error is: {ex.Message}");
+                Notifications.Error(ex.Message, "Error loading departments");
+                await Logger.Log(_fullname, $" | Error occurred when loading departments in Ticket Module Panel. | Error is: {ex.Message}");
+            }
+
+            // Now update the UI on the UI thread:
+            if (txtDep.InvokeRequired)
+            {
+                txtDep.Invoke(new Action(() =>
+                {
+                    txtDep.Items.Clear();
+                    foreach (var dept in departmentNames)
+                    {
+                        txtDep.Items.Add(dept);
+                    }
+                }));
+            }
+            else
+            {
+                txtDep.Items.Clear();
+                foreach (var dept in departmentNames)
+                {
+                    txtDep.Items.Add(dept);
+                }
             }
         }
         private async Task LoadUsers()
         {
+            // Create a temporary list to hold the user names
+            List<string> userNames = new List<string>();
+
             try
             {
-                cmbUsers.Items.Clear();
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
-                using var cm = new SqlCommand("SELECT fullname FROM Users WHERE type='User'", connection);
-                using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+                if (_connection_servicedesk == null || _connection_servicedesk.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheServiceDeskDatabase();
+                }
+                using var cm = new SqlCommand("SELECT fullname FROM Users WHERE type='User'", _connection_servicedesk);
+                using var dr = await cm.ExecuteReaderAsync();
                 while (await dr.ReadAsync())
                 {
-                    cmbUsers.Items.Add(dr["fullname"].ToString());
+                    userNames.Add(dr["fullname"].ToString());
                 }
             }
             catch (Exception ex)
             {
-                Notifications.Error(ex.Message,"Error loading users");
-                await Logger.Log(_fullname, $" | Error is occured when loading users in Ticket Module Panel. | Error is: {ex.Message}");
+                Notifications.Error(ex.Message, "Error loading users");
+                await Logger.Log(_fullname, $" | Error occurred when loading users in Ticket Module Panel. | Error is: {ex.Message}");
+            }
+
+            // Now update the UI on the UI thread:
+            if (cmbUsers.InvokeRequired)
+            {
+                cmbUsers.Invoke(new Action(() =>
+                {
+                    cmbUsers.Items.Clear();
+                    foreach (var name in userNames)
+                    {
+                        cmbUsers.Items.Add(name);
+                    }
+                }));
+            }
+            else
+            {
+                cmbUsers.Items.Clear();
+                foreach (var name in userNames)
+                {
+                    cmbUsers.Items.Add(name);
+                }
             }
         }
+
         #endregion
         #region Ticket ID
         private async Task FindTicketID()
         {
+            string query = "SELECT MAX(ID) AS MaxID FROM Ticket";
             try
             {
-                string query = "SELECT MAX(ID) AS MaxID FROM Ticket";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
-                using var cm = new SqlCommand(query, connection);
+                if (_connection_servicedesk == null || _connection_servicedesk.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheServiceDeskDatabase();
+                }
+                using var cm = new SqlCommand(query, _connection_servicedesk);
                 var result = await cm.ExecuteScalarAsync();
                 ticketID = result != DBNull.Value && result != null ? Convert.ToInt32(result) + 1 : 1;
             }
@@ -245,13 +351,15 @@ namespace ServiceDesk.Forms
         {
             try
             {
-                using var connection = await connect.EstablishConnectionWithInventoryAsync();
-                if (connection is null) return;
-                using var cm = new SqlCommand("SELECT prodCode,pdepartment,pworker,pcategory FROM Product WHERE prodCode=@prodCode1 OR prodCode=@prodCode2 OR prodCode=@prodCode3", connection);
+                if (_connection_inventory == null || _connection_inventory.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheInventoryDatabase();
+                }
+                using var cm = new SqlCommand("SELECT prodCode,pdepartment,pworker,pcategory FROM Product WHERE prodCode=@prodCode1 OR prodCode=@prodCode2 OR prodCode=@prodCode3", _connection_inventory);
                 cm.Parameters.AddWithValue("@prodCode1", $"{txtCode.Text}");
                 cm.Parameters.AddWithValue("@prodCode2", $"*{txtCode.Text}");
                 cm.Parameters.AddWithValue("@prodCode3", $"#{txtCode.Text}");
-                using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+                using var dr = await cm.ExecuteReaderAsync();
                 if (!dr.HasRows)
                 {
                     _IsValidCode = false;
@@ -439,9 +547,7 @@ namespace ServiceDesk.Forms
         #region SaveButton
         private async Task SaveTicketToDatabase()
         {
-            try
-            {
-                string query = @"INSERT INTO Ticket
+            string query = @"INSERT INTO Ticket
                                     (ID,code,dep_name,worker,device,task,solution,creation_date,fullname)
                               VALUES(@ID,@code, @dep_name, @worker, @device, @task, @solution,@creation_date,@fullname)
                                     INSERT INTO Status
@@ -450,9 +556,13 @@ namespace ServiceDesk.Forms
                                     INSERT INTO Rating
                                     (ID)
                               VALUES(@ID)";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
-                using var cm = new SqlCommand(query, connection);
+            try
+            {
+                if (_connection_servicedesk == null || _connection_servicedesk.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheServiceDeskDatabase();
+                }
+                using var cm = new SqlCommand(query, _connection_servicedesk);
                 cm.Parameters.AddWithValue("@ID", ticketID);
                 cm.Parameters.AddWithValue("@code", txtCode.Text);
                 cm.Parameters.AddWithValue("@dep_name", txtDep.Text);
@@ -475,6 +585,7 @@ namespace ServiceDesk.Forms
                     Notifications.Warning("Ticket has not been saved!");
                     return;
                 }
+                _connection_servicedesk?.Close();
             }
             catch (Exception ex)
             {
@@ -511,9 +622,7 @@ namespace ServiceDesk.Forms
         #region UpdateButton
         private async Task UpdateTicketToDatabase()
         {
-            try
-            {
-                string query = @"
+            string query = @"
                     UPDATE Ticket
                     SET 
                           code = @code,
@@ -525,9 +634,14 @@ namespace ServiceDesk.Forms
                           fullname=@fullname
                     WHERE 
                           ID=@ID";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
-                using var cm = new SqlCommand(query, connection);
+
+            try
+            {
+                if (_connection_servicedesk == null || _connection_servicedesk.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheServiceDeskDatabase();
+                }
+                using var cm = new SqlCommand(query, _connection_servicedesk);
                 cm.Parameters.AddWithValue("@ID", ticketID);
                 cm.Parameters.AddWithValue("@code", txtCode.Text);
                 cm.Parameters.AddWithValue("@dep_name", txtDep.Text);
@@ -547,6 +661,7 @@ namespace ServiceDesk.Forms
                     Notifications.Warning("Ticket has not been updated! ");
                     return;
                 }
+                _connection_servicedesk?.Close();
             }
             catch (Exception ex)
             {
@@ -590,9 +705,7 @@ namespace ServiceDesk.Forms
         #region CloseButton
         private async Task CloseTicketInDatabase()
         {
-            try
-            {
-                string query = @"
+            string query = @"
                     UPDATE Ticket
                     SET
                           code = @code,
@@ -606,34 +719,37 @@ namespace ServiceDesk.Forms
                           fullname=@fullname
                     WHERE
                           ID=@ID";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
+            try
+            {
+                if (_connection_servicedesk == null || _connection_servicedesk.State == ConnectionState.Closed)
                 {
-                    using var cm = new SqlCommand(query, connection);
-                    cm.Parameters.AddWithValue("@ID", ticketID);
-                    cm.Parameters.AddWithValue("@code", txtCode.Text);
-                    cm.Parameters.AddWithValue("@dep_name", txtDep.Text);
-                    cm.Parameters.AddWithValue("@worker", txtWorker.Text);
-                    cm.Parameters.AddWithValue("@device", txtDevice.Text);
-                    cm.Parameters.AddWithValue("@task", _tasks);
-                    cm.Parameters.AddWithValue("@fullname", _users);
-                    cm.Parameters.AddWithValue("@solution", txtSolution.Text);
-                    cm.Parameters.AddWithValue("@finished_time", DateTime.Now.ToString());
-                    cm.Parameters.AddWithValue("@taken_time", CalculateTime(DateTime.Parse(timeElapsed)));
-                    await cm.ExecuteNonQueryAsync();
-                    if (cm != null)
-                    {
-                        Notifications.Information("Ticket has been succesfully closed", "Succesful");
-                        await Logger.Log(_fullname, $" closed a ticket with Ticket ID: [{ticketID}], Inventory Code: [{txtCode.Text}], Department: [{txtDep.Text}], Worker: [{txtWorker.Text}], Device: [{txtDevice.Text}], Task: [{_tasks}], Solution: [{txtSolution.Text}], Fullname: [{_fullname}] in Ticket Table");
-                        await CloseTicketStatus("closed");
-                        await CloseTicketStatus("resolved");
-                    }
-                    else
-                    {
-                        Notifications.Warning("Ticket has not been closed");
-                        return;
-                    }
+                    await ConnectToTheServiceDeskDatabase();
                 }
+                using var cm = new SqlCommand(query, _connection_servicedesk);
+                cm.Parameters.AddWithValue("@ID", ticketID);
+                cm.Parameters.AddWithValue("@code", txtCode.Text);
+                cm.Parameters.AddWithValue("@dep_name", txtDep.Text);
+                cm.Parameters.AddWithValue("@worker", txtWorker.Text);
+                cm.Parameters.AddWithValue("@device", txtDevice.Text);
+                cm.Parameters.AddWithValue("@task", _tasks);
+                cm.Parameters.AddWithValue("@fullname", _users);
+                cm.Parameters.AddWithValue("@solution", txtSolution.Text);
+                cm.Parameters.AddWithValue("@finished_time", DateTime.Now.ToString());
+                cm.Parameters.AddWithValue("@taken_time", CalculateTime(DateTime.Parse(timeElapsed)));
+                await cm.ExecuteNonQueryAsync();
+                if (cm != null)
+                {
+                    Notifications.Information("Ticket has been succesfully closed", "Succesful");
+                    await Logger.Log(_fullname, $" closed a ticket with Ticket ID: [{ticketID}], Inventory Code: [{txtCode.Text}], Department: [{txtDep.Text}], Worker: [{txtWorker.Text}], Device: [{txtDevice.Text}], Task: [{_tasks}], Solution: [{txtSolution.Text}], Fullname: [{_fullname}] in Ticket Table");
+                    await CloseTicketStatus("closed");
+                    await CloseTicketStatus("resolved");
+                }
+                else
+                {
+                    Notifications.Warning("Ticket has not been closed");
+                    return;
+                }
+                _connection_servicedesk?.Close();
             }
             catch (Exception ex)
             {
@@ -648,9 +764,7 @@ namespace ServiceDesk.Forms
         private async Task CreateAndCloseTicketInDatabase()
         {
             await FindTicketID();
-            try
-            {
-                string query = @"INSERT INTO Ticket
+            string query = @"INSERT INTO Ticket
                                     (ID,code,dep_name,worker,device,task,solution,creation_date,fullname,finished_time,taken_time)
                               VALUES(@ID,@code, @dep_name, @worker, @device, @task, @solution,@creation_date,@fullname,@finished_time,@taken_time)
                                     INSERT INTO Status
@@ -659,9 +773,13 @@ namespace ServiceDesk.Forms
                                     INSERT INTO Rating
                                     (ID)
                               VALUES(@ID)";
-                using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-                if (connection is null) return;
-                using var cm = new SqlCommand(query, connection);
+            try
+            {
+                if (_connection_servicedesk == null || _connection_servicedesk.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheServiceDeskDatabase();
+                }
+                using var cm = new SqlCommand(query, _connection_servicedesk);
                 cm.Parameters.AddWithValue("@ID", ticketID);
                 cm.Parameters.AddWithValue("@code", txtCode.Text);
                 cm.Parameters.AddWithValue("@dep_name", txtDep.Text);
@@ -686,6 +804,7 @@ namespace ServiceDesk.Forms
                     Notifications.Warning("Ticket has not been created!");
                     return;
                 }
+                _connection_servicedesk?.Close();
             }
             catch (Exception ex)
             {
@@ -699,14 +818,25 @@ namespace ServiceDesk.Forms
         }
         private async Task CloseTicketStatus(string status)
         {
-            //Closing the status of ticket
-            using var connection = await connect.EstablishConnectionWithServiceDeskAsync(_mainMenu._sessionId);
-            if (connection is null) return;
-            using var cm = new SqlCommand("UPDATE Status SET status=@status WHERE status=@currentStatus AND ID=@ID", connection);
-            cm.Parameters.AddWithValue("@status", status);
-            cm.Parameters.AddWithValue("@currentStatus", status == "closed" ? "pending" : "resolving");
-            cm.Parameters.AddWithValue("@ID", ticketID);
-            await cm.ExecuteNonQueryAsync();
+            try
+            {
+                //Closing the status of ticket
+                if (_connection_servicedesk == null || _connection_servicedesk.State == ConnectionState.Closed)
+                {
+                    await ConnectToTheServiceDeskDatabase();
+                }
+                using var cm = new SqlCommand("UPDATE Status SET status=@status WHERE status=@currentStatus AND ID=@ID", _connection_servicedesk);
+                cm.Parameters.AddWithValue("@status", status);
+                cm.Parameters.AddWithValue("@currentStatus", status == "closed" ? "pending" : "resolving");
+                cm.Parameters.AddWithValue("@ID", ticketID);
+                await cm.ExecuteNonQueryAsync();
+                _connection_servicedesk?.Close();
+            }
+            catch (Exception ex)
+            {
+                Notifications.Error(ex.Message, "Error occured while closing ticket status");
+                await Logger.Log(_fullname, $" | Error occured in TicketModule Panel while running CloseTicketStatus. | Error is: {ex.Message}");
+            }
         }
         private async Task CloseButton()
         {
