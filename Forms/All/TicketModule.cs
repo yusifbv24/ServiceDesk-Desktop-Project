@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ServiceDesk.Class;
+using ServiceDesk.Dto;
 using ServiceDesk.Properties;
 
 namespace ServiceDesk.Forms
@@ -24,13 +25,14 @@ namespace ServiceDesk.Forms
         private string _users;
         private Main _mainMenu;
         private SqlConnection _connection_servicedesk { get; set; } = null;
-        private SqlConnection _connection_inventory { get; set; } = null;
+        private ProductServiceClient _productServiceClient;
         public TicketModule(string _fullName,string userType, Main mainMenu)
         {
             InitializeComponent();
             this._fullname = _fullName;
             this._userType = userType;
             _mainMenu = mainMenu;
+            _productServiceClient = new ProductServiceClient();
             LoadInformation();
             LoadDefaultSettings();
             guna2ShadowForm.SetShadowForm(this);
@@ -65,24 +67,11 @@ namespace ServiceDesk.Forms
                 await _connection_servicedesk.OpenAsync();
             }
         }
-        private async Task ConnectToTheInventoryDatabase()
-        {
-            if (_connection_inventory == null)
-            {
-                _connection_inventory = ConnectionDatabase.ConnectToTheInventoryServer();
-                await _connection_inventory.OpenAsync();
-            }
-            if (_connection_inventory.State == ConnectionState.Closed)
-            {
-                await _connection_inventory.OpenAsync();
-            }
-        }
         private void LoadInformation()
         {
             Task.Run(async () =>
             {
                 await ConnectToTheServiceDeskDatabase();
-                await ConnectToTheInventoryDatabase();
                 await LoadTasks();
                 await LoadDepartments();
                 await LoadUsers();
@@ -351,29 +340,23 @@ namespace ServiceDesk.Forms
         {
             try
             {
-                if (_connection_inventory == null || _connection_inventory.State == ConnectionState.Closed)
-                {
-                    await ConnectToTheInventoryDatabase();
-                }
-                using var cm = new SqlCommand("SELECT prodCode,pdepartment,pworker,pcategory FROM Product WHERE prodCode=@prodCode1 OR prodCode=@prodCode2 OR prodCode=@prodCode3", _connection_inventory);
-                cm.Parameters.AddWithValue("@prodCode1", $"{txtCode.Text}");
-                cm.Parameters.AddWithValue("@prodCode2", $"*{txtCode.Text}");
-                cm.Parameters.AddWithValue("@prodCode3", $"#{txtCode.Text}");
-                using var dr = await cm.ExecuteReaderAsync();
-                if (!dr.HasRows)
+                ProductDto product = null;
+                product = await _productServiceClient.GetProductByInventoryCodeAsync(code);
+
+                if (product == null)
                 {
                     _IsValidCode = false;
                     CheckInventoryCode.Visible = true;
                     await CheckInventoryCodeSituation();
                     return;
                 }
-                while (await dr.ReadAsync())
-                {
-                    txtCode.Text = dr["prodCode"].ToString();
-                    txtDep.Text = dr["pdepartment"].ToString();
-                    txtWorker.Text = dr["pworker"].ToString();
-                    txtDevice.Text = dr["pcategory"].ToString();
-                }
+
+                // Map the API response to the form fields
+                txtCode.Text = product.InventoryCode.ToString();
+                txtDep.Text = product.DepartmentName;
+                txtWorker.Text = product.Worker ?? string.Empty;
+                txtDevice.Text = product.CategoryName;
+
                 txtDevice.Enabled = false;
                 txtDep.Enabled = false;
                 txtWorker.Enabled = false;
@@ -382,8 +365,13 @@ namespace ServiceDesk.Forms
             }
             catch (Exception ex)
             {
-                Notifications.Error(ex.Message, "Error occured while checking InventoryCodeCondition");
-                await Logger.Log(_fullname, $" | Error occured in InventoryCodeCondition in TicketModule Panel. | Error is: {ex.Message}");
+                Notifications.Error(ex.Message, "Error occurred while checking inventory code");
+                await Logger.Log(_fullname, $" | Error occurred in InventoryCodeCondition in TicketModule Panel. | Error is: {ex.Message}");
+
+                // If API fails, mark as invalid
+                _IsValidCode = false;
+                CheckInventoryCode.Visible = true;
+                await CheckInventoryCodeSituation();
             }
         }
         private async void IfNoInventoryCode_CheckStateChanged(object sender, EventArgs e)

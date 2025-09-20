@@ -265,12 +265,15 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Class\ConnectionDatabase.cs" />
+    <Compile Include="Class\ProductServiceClient.cs" />
     <Compile Include="Class\Ratings.cs" />
     <Compile Include="Class\CredentialManager.cs" />
     <Compile Include="Class\Cryptography.cs" />
     <Compile Include="Class\Logger.cs" />
     <Compile Include="Class\Notifications.cs" />
     <Compile Include="Class\TableDependencies.cs" />
+    <Compile Include="Dto\DepartmentDto.cs" />
+    <Compile Include="Dto\ProductDto.cs" />
     <Compile Include="Forms\User\ClosedTickets.cs">
       <SubType>Form</SubType>
     </Compile>
