@@ -18,7 +18,7 @@ namespace ServiceDesk.Class
         {
             _httpClient= new HttpClient();
             //Read the API URL from configuration file
-            _baseUrl=ConfigurationManager.AppSettings["ProductServiceUrl"] ?? "https://inventory166.az/api";
+            _baseUrl=ConfigurationManager.AppSettings["ProductServiceUrl"] ?? "http://inventory166.az:5001/api";
             _apiKey = ConfigurationManager.AppSettings["ProductServiceApiKey"] ?? "";
             _httpClient.BaseAddress = new Uri(_baseUrl);
             _httpClient.DefaultRequestHeaders.Accept.Clear();
@@ -29,12 +29,12 @@ namespace ServiceDesk.Class
                 _httpClient.DefaultRequestHeaders.Add("X-Api-Key", _apiKey);
             }
         }
-        public async Task<ProductDto> GetProductByInventoryCodeAsync(string inventoryCode,string authToken = null)
+        public async Task<ProductDto> GetProductByInventoryCodeAsync(string inventoryCode)
         {
             try
             {
                 // Call the ProductService API endpoint
-                var response = await _httpClient.GetAsync($"/products/search/inventory-code/{inventoryCode}");
+                var response = await _httpClient.GetAsync($"api/products/search/inventory-code/{inventoryCode}");
 
                 if(response.IsSuccessStatusCode)
                 {
@@ -61,17 +61,11 @@ namespace ServiceDesk.Class
             }
         }
 
-        public async Task<List<DepartmentDto>> GetDepartmentsAsync(string authToken = null)
+        public async Task<List<DepartmentDto>> GetDepartmentsAsync()
         {
             try
             {
-                if (!string.IsNullOrEmpty(authToken))
-                {
-                    _httpClient.DefaultRequestHeaders.Authorization =
-                        new AuthenticationHeaderValue("Bearer", authToken);
-                }
-
-                var response = await _httpClient.GetAsync("/departments");
+                var response = await _httpClient.GetAsync("api/departments");
 
                 if (response.IsSuccessStatusCode)
                 {

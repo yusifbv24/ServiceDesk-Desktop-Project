@@ -1,14 +1,15 @@
-﻿using System;
+﻿using ServiceDesk.Class;
+using ServiceDesk.Dto;
+using ServiceDesk.Properties;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
 using System.Drawing;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using ServiceDesk.Class;
-using ServiceDesk.Dto;
-using ServiceDesk.Properties;
 
 namespace ServiceDesk.Forms
 {
@@ -123,20 +124,14 @@ namespace ServiceDesk.Forms
         }
         private async Task LoadDepartments()
         {
-            // Create a temporary list to hold the department names
-            List<string> departmentNames = new List<string>();
-
+            List<string> departmentNames= new List<string>();
             try
             {
-                if (_connection_inventory == null || _connection_inventory.State == ConnectionState.Closed)
+                var departments = await _productServiceClient.GetDepartmentsAsync();
+
+                if (departments != null)
                 {
-                    await ConnectToTheInventoryDatabase();
-                }
-                using var cm = new SqlCommand("SELECT dname FROM Department", _connection_inventory);
-                using var dr = await cm.ExecuteReaderAsync();
-                while (await dr.ReadAsync())
-                {
-                    departmentNames.Add(dr["dname"].ToString());
+                    departmentNames = departments.Select(d => d.Name).ToList();
                 }
             }
             catch (Exception ex)
@@ -341,7 +336,7 @@ namespace ServiceDesk.Forms
             try
             {
                 ProductDto product = null;
-                product = await _productServiceClient.GetProductByInventoryCodeAsync(code);
+                product = await _productServiceClient.GetProductByInventoryCodeAsync(txtCode.Text);
 
                 if (product == null)
                 {
