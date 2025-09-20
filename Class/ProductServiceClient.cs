@@ -4,8 +4,8 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Text.Json;
 using System.Threading.Tasks;
+using System.Text.Json;
 
 namespace ServiceDesk.Class
 {
@@ -54,7 +54,7 @@ namespace ServiceDesk.Class
 
                 return null;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 await Logger.Log("System", $"Error calling ProductService API: {ex.Message}");
                 return null;
