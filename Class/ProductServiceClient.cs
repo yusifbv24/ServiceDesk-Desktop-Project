@@ -13,26 +13,26 @@ namespace ServiceDesk.Class
     {
         private readonly HttpClient _httpClient;
         private readonly string _baseUrl;
+        private readonly string _apiKey;
         public ProductServiceClient()
         {
             _httpClient= new HttpClient();
             //Read the API URL from configuration file
             _baseUrl=ConfigurationManager.AppSettings["ProductServiceUrl"] ?? "https://inventory166.az/api";
+            _apiKey = ConfigurationManager.AppSettings["ProductServiceApiKey"] ?? "";
             _httpClient.BaseAddress = new Uri(_baseUrl);
             _httpClient.DefaultRequestHeaders.Accept.Clear();
             _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            // Add the API key to all requests
+            if (!string.IsNullOrEmpty(_apiKey))
+            {
+                _httpClient.DefaultRequestHeaders.Add("X-Api-Key", _apiKey);
+            }
         }
         public async Task<ProductDto> GetProductByInventoryCodeAsync(string inventoryCode,string authToken = null)
         {
             try
             {
-                // Add authorization header if token is provided
-                if (!string.IsNullOrEmpty(authToken))
-                {
-                    _httpClient.DefaultRequestHeaders.Authorization = 
-                            new AuthenticationHeaderValue("Bearer", authToken);
-                }
-
                 // Call the ProductService API endpoint
                 var response = await _httpClient.GetAsync($"/products/search/inventory-code/{inventoryCode}");
 
@@ -44,6 +44,12 @@ namespace ServiceDesk.Class
                         PropertyNameCaseInsensitive = true
                     };
                     return JsonSerializer.Deserialize<ProductDto>(json, options);
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    // Log the authentication failure
+                    await Logger.Log("System", "Failed to authenticate with ProductService API. Please check API key configuration.");
+                    return null;
                 }
 
                 return null;
