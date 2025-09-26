@@ -1,12 +1,9 @@
 ﻿using ServiceDesk.Class;
 using System;
 using System.Data;
-using System.Data.Common;
 using System.Data.SqlClient;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 
 namespace ServiceDesk.Forms
 {
@@ -14,14 +11,15 @@ namespace ServiceDesk.Forms
     {
         private Main _mainMenu;
         private readonly string _fullname = default;
+        private ProductServiceClient _productServiceClient;
         private SqlConnection _connection_servicedesk { get; set; } = null;
-        private SqlConnection _connection_inventory { get; set; } = null;
         public FindTickets(string fullname,Main mainMenu,out FindTickets findTickets)
         {
             InitializeComponent();
             _fullname = fullname;
             _mainMenu = mainMenu;
             findTickets = this;
+            _productServiceClient=new ProductServiceClient();
             _ = LoadUsers();
             _ = LoadDepartments();
         }
@@ -35,18 +33,6 @@ namespace ServiceDesk.Forms
             if (_connection_servicedesk.State == ConnectionState.Closed)
             {
                 await _connection_servicedesk.OpenAsync();
-            }
-        }
-        private async Task ConnectToTheInventoryDatabase()
-        {
-            if (_connection_inventory == null)
-            {
-                _connection_inventory = ConnectionDatabase.ConnectToTheInventoryServer();
-                await _connection_inventory.OpenAsync();
-            }
-            if (_connection_inventory.State == ConnectionState.Closed)
-            {
-                await _connection_inventory.OpenAsync();
             }
         }
         private string RemoveStringFromTime(string text)
@@ -102,17 +88,11 @@ namespace ServiceDesk.Forms
         {
             try
             {
-                if (_connection_inventory == null || _connection_inventory.State == ConnectionState.Closed)
+                var departmentsNames = await _productServiceClient.GetDepartmentsAsync();
+                foreach (var department in departmentsNames)
                 {
-                    await ConnectToTheInventoryDatabase();
+                    cmbDepartmentSearch.Items.Add(department.Name);
                 }
-                using var cm = new SqlCommand("SELECT dname FROM Department ORDER BY dname ASC", _connection_inventory);
-                using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
-                while (await dr.ReadAsync())
-                {
-                    cmbDepartmentSearch.Items.Add(dr["dname"].ToString());
-                }
-                _connection_inventory?.Close();
             }
             catch (Exception ex)
             {
@@ -385,9 +365,7 @@ namespace ServiceDesk.Forms
                     await _connection.OpenAsync();
                     if (_connection.State == ConnectionState.Closed) return;
                     using var cm = new SqlCommand(query, _connection);
-                    cm.Parameters.AddWithValue("@code1", txtSearchCode.Text);
-                    cm.Parameters.AddWithValue("@code2", $"*{txtSearchCode.Text}");
-                    cm.Parameters.AddWithValue("@code3", $"#{txtSearchCode.Text}");
+                    cm.Parameters.AddWithValue("@code", txtSearchCode.Text);
                     // Add search parameter only if searchText is not empty
                     if (!string.IsNullOrEmpty(_mainMenu.txtSearch.Text))
                     {
