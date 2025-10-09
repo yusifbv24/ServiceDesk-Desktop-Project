@@ -336,17 +336,13 @@ namespace ServiceDesk.Forms
                     dgvTicket.Columns["User"].Visible = true;
                     dgvTicket.Columns["Dep"].Visible = true;
                     string query = @"SELECT * FROM Ticket 
-                                WHERE code LIKE @code1 
-                                OR code LIKE @code2 
-                                OR code LIKE @code3";
+                                WHERE code LIKE @code";
 
                     if (!string.IsNullOrEmpty(_mainMenu.txtSearch.Text))
                     {
                         query = @" SELECT Ticket.* FROM Ticket 
                                     INNER JOIN Status ON Ticket.ID=Status.ID
-                                    WHERE code LIKE @code1 
-                                    OR code LIKE @code2 
-                                    OR code LIKE @code3
+                                    WHERE code LIKE @code
                                     AND Status.time BETWEEN @fromDate AND @toDate
                                     AND (Ticket.ID LIKE @searchText 
                                     OR code LIKE @searchText 
