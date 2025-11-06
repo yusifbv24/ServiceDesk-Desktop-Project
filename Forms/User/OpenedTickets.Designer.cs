@@ -44,7 +44,6 @@
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle10 = new System.Windows.Forms.DataGridViewCellStyle();
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle11 = new System.Windows.Forms.DataGridViewCellStyle();
             this.dgvTask = new System.Windows.Forms.DataGridView();
-            this.guna2Elipse_Form = new Guna.UI2.WinForms.Guna2Elipse(this.components);
             this.Code = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.Worker = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.Vendor = new System.Windows.Forms.DataGridViewTextBoxColumn();
@@ -54,6 +53,7 @@
             this.Solution = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.Created_date = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.Date = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.guna2Elipse_Form = new Guna.UI2.WinForms.Guna2Elipse(this.components);
             ((System.ComponentModel.ISupportInitialize)(this.dgvTask)).BeginInit();
             this.SuspendLayout();
             // 
@@ -130,11 +130,6 @@
             this.dgvTask.Size = new System.Drawing.Size(1082, 690);
             this.dgvTask.TabIndex = 4;
             this.dgvTask.CellContentClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.DgvTicket_CellContentClick);
-            // 
-            // guna2Elipse_Form
-            // 
-            this.guna2Elipse_Form.BorderRadius = 25;
-            this.guna2Elipse_Form.TargetControl = this;
             // 
             // Code
             // 
@@ -242,6 +237,11 @@
             this.Date.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.NotSortable;
             this.Date.Width = 105;
             // 
+            // guna2Elipse_Form
+            // 
+            this.guna2Elipse_Form.BorderRadius = 25;
+            this.guna2Elipse_Form.TargetControl = this;
+            // 
             // OpenedTickets
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(10F, 20F);
@@ -255,7 +255,6 @@
             this.Name = "OpenedTickets";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "OpenedTickets";
-            this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.OpenedTickets_FormClosing);
             ((System.ComponentModel.ISupportInitialize)(this.dgvTask)).EndInit();
             this.ResumeLayout(false);
 

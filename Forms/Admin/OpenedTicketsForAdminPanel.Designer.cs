@@ -46,7 +46,6 @@
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle12 = new System.Windows.Forms.DataGridViewCellStyle();
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(OpenedTicketsForAdminPanel));
             this.dgvTicket = new System.Windows.Forms.DataGridView();
-            this.guna2Elipse_Form = new Guna.UI2.WinForms.Guna2Elipse(this.components);
             this.Code = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.Worker = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.Vendor = new System.Windows.Forms.DataGridViewTextBoxColumn();
@@ -58,6 +57,7 @@
             this.Date = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.Users = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.Delete = new System.Windows.Forms.DataGridViewImageColumn();
+            this.guna2Elipse_Form = new Guna.UI2.WinForms.Guna2Elipse(this.components);
             ((System.ComponentModel.ISupportInitialize)(this.dgvTicket)).BeginInit();
             this.SuspendLayout();
             // 
@@ -137,11 +137,6 @@
             this.dgvTicket.Size = new System.Drawing.Size(1082, 690);
             this.dgvTicket.TabIndex = 5;
             this.dgvTicket.CellContentClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.DgvTicket_CellContentClick);
-            // 
-            // guna2Elipse_Form
-            // 
-            this.guna2Elipse_Form.BorderRadius = 25;
-            this.guna2Elipse_Form.TargetControl = this;
             // 
             // Code
             // 
@@ -270,6 +265,11 @@
             this.Delete.ReadOnly = true;
             this.Delete.Width = 25;
             // 
+            // guna2Elipse_Form
+            // 
+            this.guna2Elipse_Form.BorderRadius = 25;
+            this.guna2Elipse_Form.TargetControl = this;
+            // 
             // OpenedTicketsForAdminPanel
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(10F, 20F);
@@ -283,7 +283,6 @@
             this.Name = "OpenedTicketsForAdminPanel";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "OpenedTicketsForAdminPanel";
-            this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.OpenedTicketsForAdminPanel_FormClosing);
             ((System.ComponentModel.ISupportInitialize)(this.dgvTicket)).EndInit();
             this.ResumeLayout(false);
 

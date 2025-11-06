@@ -11,7 +11,6 @@ using ServiceDesk.Class;
 using TableDependency.SqlClient;
 using TableDependency.SqlClient.Base.Enums;
 using TableDependency.SqlClient.Base.EventArgs;
-using static ServiceDesk.Class.TableDependencies;
 
 namespace ServiceDesk.Forms
 {
@@ -20,7 +19,6 @@ namespace ServiceDesk.Forms
         private CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
         private Main _mainMenu;
         private readonly string _fullname = default;
-        private SqlTableDependency<TaskTable> _tableDependency;
         private SqlConnection _connection { get; set; } = null;
         private static string _connection_string { get; set; } = null;
         public Tasks(string fullname, Main mainMenu, out Tasks problems)
@@ -30,8 +28,6 @@ namespace ServiceDesk.Forms
             _mainMenu = mainMenu;
             problems = this;
             _ = LoadTasks();
-            _ = ConnectDependenciesToDatabase();
-            StartTableDependency(); // Start listening for table changes
         }
         private async Task ConnectToTheDatabase()
         {
@@ -181,93 +177,5 @@ namespace ServiceDesk.Forms
                 await Logger.Log(_fullname, $" | Error is occured when editing tasks. | Error is: {ex.Message}");
             }
         }
-        #region SqlTableDependency
-        private async void Tasks_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            await StopTableDependencyAsync();
-        }
-        private void StartTableDependency()
-        {
-            var cts = new CancellationTokenSource(); // Create a new CancellationTokenSource
-            Task.Run(async () =>
-            {
-                try
-                {
-                    await ProblemTableDependency(cts.Token);
-                }
-                catch (OperationCanceledException ex)
-                {
-                    Notifications.Error("Table dependencies were canceled.", "Error");
-                    await Logger.Log(_fullname, $"Table dependencies were canceled in Task Panel. Error : {ex.Message}");
-                }
-                catch (Exception ex)
-                {
-                    await Logger.Log(_fullname, $"An error occurred in Task Panel: {ex.Message}");
-                }
-            }, cts.Token);
-        }
-        private async Task ProblemTableDependency(CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            // Ensure the previous instance is disposed before creating a new one
-            _tableDependency?.Stop();
-            _tableDependency?.Dispose();
-
-            if (_tableDependency != null)
-            {
-                _tableDependency.OnChanged += TableDependency_Task_OnChanged;
-                _tableDependency.OnError += TableDependency_OnError;
-                _tableDependency.Start();
-            }
-
-            await Task.Delay(1000, cancellationToken); // Simulate work
-        }
-        private async Task ConnectDependenciesToDatabase()
-        {
-            _connection_string= ConfigurationManager.ConnectionStrings["ServiceDesk"].ConnectionString;
-            await Task.Delay(1000);
-            _tableDependency ??= new SqlTableDependency<TaskTable>(_connection_string, "Ticket");
-        }
-        private async Task StopTableDependencyAsync()
-        {
-            try
-            {
-                if (_cancellationTokenSource != null && !_cancellationTokenSource.IsCancellationRequested)
-                {
-                    _cancellationTokenSource.Cancel();
-                }
-
-                // Stop and dispose table dependencies
-                _tableDependency?.Stop();
-                _tableDependency?.Dispose();
-                _tableDependency = null;
-            }
-            catch (Exception ex)
-            {
-                Notifications.Error(ex.Message, "Error occurred while stopping table dependencies");
-                await Logger.Log(_fullname, $"Error occurred in Task panel while stopping table dependencies. Error: {ex.Message}");
-            }
-            finally
-            {
-                _cancellationTokenSource?.Dispose();
-                _cancellationTokenSource = new CancellationTokenSource();
-            }
-        }
-        private void TableDependency_Task_OnChanged(object sender, RecordChangedEventArgs<TaskTable> e)
-        {
-            if (!this.IsDisposed && this.IsHandleCreated)
-            {
-                if (e.ChangeType != TableDependency.SqlClient.Base.Enums.ChangeType.None)
-                {
-                    // Refresh DataGridView
-                    this.BeginInvoke((MethodInvoker)(async () => await LoadTasks()));
-                }
-            }
-        }
-        private async void TableDependency_OnError(object sender, ErrorEventArgs e)
-        {
-            await Logger.Log(_fullname, "Error occured while running table dependency in Tasks");
-        }
-        #endregion
     }
 }

@@ -8,7 +8,6 @@ using ServiceDesk.Class;
 using TableDependency.SqlClient;
 using TableDependency.SqlClient.Base.EventArgs;
 using TableDependency.SqlClient.Base.Enums;
-using static ServiceDesk.Class.TableDependencies;
 using System.Data;
 using System.Data.Common;
 using System.Threading;
@@ -21,9 +20,6 @@ namespace ServiceDesk.Forms
     {
         private readonly string _fullname = default;
         private Main _mainMenu;
-        private SqlTableDependency<UserTable> _tableDependency_User;
-        private SqlTableDependency<UserSessionTable> _tableDependency_Session;
-        private CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
         private SqlConnection _connection { get; set; } = null;
         private static string _connection_string { get; set; } = null;
         public Users(string fullname, Main mainMenu, out Users users)
@@ -33,8 +29,6 @@ namespace ServiceDesk.Forms
             _mainMenu = mainMenu;
             users = this;
             _=LoadUsers();
-            _=ConnectDependenciesToDatabase();
-            StartTableDependency(); // Start listening for table changes
         }
         private async Task ConnectToTheDatabase()
         {
@@ -188,125 +182,5 @@ namespace ServiceDesk.Forms
                 await Logger.Log(_fullname, $" | Error occured when editing users in User Panel. | Error is: {ex.Message}");
             }
         }
-        #region SqlTableDependency
-        private async void Users_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            await StopTableDependencyAsync();
-        }
-        private async Task ConnectDependenciesToDatabase()
-        {
-            _connection_string= ConfigurationManager.ConnectionStrings["ServiceDesk"].ConnectionString;
-            await Task.Delay(1000);
-            _tableDependency_User = new SqlTableDependency<UserTable>(_connection_string, "Users");
-            await Task.Delay(1000);
-            _tableDependency_Session = new SqlTableDependency<UserSessionTable>(_connection_string, "UserSessions");
-        }
-        private void StartTableDependency()
-        {
-            var cts = new CancellationTokenSource(); // Create a new CancellationTokenSource
-            Task.Run(async () =>
-            {
-                try
-                {
-                    await UserSessionsTableDependency(cts.Token);
-                    await UserTableDependency(cts.Token);
-                }
-                catch (OperationCanceledException ex)
-                {
-                    Notifications.Error("Table dependencies were canceled.", "Error");
-                    await Logger.Log(_fullname, $"Table dependencies were canceled in User Panel. Error : {ex.Message}");
-                }
-                catch (Exception ex)
-                {
-                    await Logger.Log(_fullname, $"An error occurred in User Panel: {ex.Message}");
-                }
-            }, cts.Token);
-        }
-        private async Task UserTableDependency(CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            // Ensure the previous instance is disposed before creating a new one
-            _tableDependency_User?.Stop();
-            _tableDependency_User?.Dispose();
-
-            if (_tableDependency_User != null)
-            {
-                _tableDependency_User.OnChanged += TableDependency_User_OnChanged;
-                _tableDependency_User.OnError += TableDependency_OnError;
-                _tableDependency_User.Start();
-            }
-
-            await Task.Delay(1000, cancellationToken); // Simulate work
-        }
-        private async Task UserSessionsTableDependency(CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            // Ensure the previous instance is disposed before creating a new one
-            _tableDependency_Session?.Stop();
-            _tableDependency_Session?.Dispose();
-
-            if (_tableDependency_Session != null)
-            {
-                _tableDependency_Session.OnChanged += TableDependency_Session_OnChanged;
-                _tableDependency_Session.OnError += TableDependency_OnError;
-                _tableDependency_Session.Start();
-            }
-
-            await Task.Delay(1000, cancellationToken); // Simulate work
-        }
-        private void TableDependency_User_OnChanged(object sender, RecordChangedEventArgs<UserTable> e)
-        {
-            if (!this.IsDisposed && this.IsHandleCreated)
-            {
-                if (e.ChangeType != ChangeType.None)
-                {
-                    this.BeginInvoke((MethodInvoker)(async () => await LoadUsers()));
-                }
-            }
-        }
-        private void TableDependency_Session_OnChanged(object sender, RecordChangedEventArgs<UserSessionTable> e)
-        {
-            if (!this.IsDisposed && this.IsHandleCreated)
-            {
-                if (e.ChangeType != ChangeType.None)
-                {
-                    this.BeginInvoke((MethodInvoker)(async () => await LoadUsers()));
-                }
-            }
-        }
-        private async void TableDependency_OnError(object sender, ErrorEventArgs e)
-        {
-            await Logger.Log(_fullname, "Error occured while running table dependency in Users");
-        }
-        private async Task StopTableDependencyAsync()
-        {
-            try
-            {
-                if (_cancellationTokenSource != null && !_cancellationTokenSource.IsCancellationRequested)
-                {
-                    _cancellationTokenSource.Cancel();
-                }
-
-                // Stop and dispose table dependencies
-                _tableDependency_Session?.Stop();
-                _tableDependency_Session?.Dispose();
-                _tableDependency_Session = null;
-
-                _tableDependency_User?.Stop();
-                _tableDependency_User?.Dispose();
-                _tableDependency_User = null;
-            }
-            catch (Exception ex)
-            {
-                Notifications.Error(ex.Message, "Error occurred while stopping table dependencies");
-                await Logger.Log(_fullname, $"Error occurred in User Panel while stopping table dependencies. Error: {ex.Message}");
-            }
-            finally
-            {
-                _cancellationTokenSource?.Dispose();
-                _cancellationTokenSource = new CancellationTokenSource();
-            }
-        }
-        #endregion
     }
 }

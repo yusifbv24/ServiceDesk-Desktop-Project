@@ -12,7 +12,6 @@ using ServiceDesk.Class;
 using TableDependency.SqlClient;
 using TableDependency.SqlClient.Base.Enums;
 using TableDependency.SqlClient.Base.EventArgs;
-using static ServiceDesk.Class.TableDependencies;
 
 namespace ServiceDesk.Forms
 {
@@ -20,10 +19,6 @@ namespace ServiceDesk.Forms
     {
         private Main _mainMenu;
         private readonly string _fullname = default;
-        private SqlTableDependency<TicketTable> _tableDependency_Ticket;
-        private SqlTableDependency<StatusTable> _tableDependency_Status;
-        private SqlTableDependency<RatingTable> _tableDependency_Rating;
-        private CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
         private SqlConnection _connection { get; set; } = null;
         private static string _connection_string { get; set; } = null;
         public ClosedTicketsForAdminPanel(string _fullname, Main mainMenu, out ClosedTicketsForAdminPanel closedTickets)
@@ -33,8 +28,6 @@ namespace ServiceDesk.Forms
             this._fullname = _fullname;
             _mainMenu = mainMenu;
             _ = LoadTickets();
-            _ = ConnectDependenciesToDatabase();
-            StartTableDependency(); // Start listening for table changes
         }
         private async Task ConnectToTheDatabase()
         {
@@ -348,153 +341,6 @@ namespace ServiceDesk.Forms
             else
             {
                 await Ratings.CalculateCSAT(users, _mainMenu._sessionId);
-            }
-        }
-        #endregion
-        #region SqlTableDependency
-        private async void ClosedTicketsForAdminPanel_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            await StopTableDependencyAsync();
-        }
-        private void TableDependency_Ticket_OnChanged(object sender, RecordChangedEventArgs<TicketTable> e)
-        {
-            if (this.IsDisposed && !this.IsHandleCreated)
-                return;
-            if (e.ChangeType != ChangeType.None)
-            {
-                this.BeginInvoke((MethodInvoker)(async () => await LoadTickets()));
-            }
-        }
-        private void TableDependency_Status_OnChanged(object sender, RecordChangedEventArgs<StatusTable> e)
-        {
-            if (this.IsDisposed && !this.IsHandleCreated) return;
-            if (e.ChangeType != ChangeType.None)
-            {
-                this.BeginInvoke((MethodInvoker)(async () => await LoadTickets()));
-            }
-        }
-        private void TableDependency_Rating_OnChanged(object sender, RecordChangedEventArgs<RatingTable> e)
-        {
-            if (this.IsDisposed && !this.IsHandleCreated) return;
-            if (e.ChangeType != ChangeType.None)
-            {
-                this.BeginInvoke((MethodInvoker)(async () => await LoadTickets()));
-            }
-        }
-        private async void TableDependency_OnError(object sender, ErrorEventArgs e)
-        {
-            await Logger.Log(_fullname, "Error occured while running table dependency in ClosedTicketForAdminPanel");
-        }
-        private void StartTableDependency()
-        {
-            var cts = new CancellationTokenSource(); // Create a new CancellationTokenSource
-            Task.Run(async () =>
-            {
-                try
-                {
-                    await TicketTableDependency(cts.Token);
-                    await StatusTableDependency(cts.Token);
-                    await RatingTableDependency(cts.Token);
-                }
-                catch (OperationCanceledException ex)
-                {
-                    Notifications.Error("Table dependencies were canceled.", "Error");
-                    await Logger.Log(_fullname, $"Table dependencies were canceled in ClosedTicketForAdminPanel. Error : {ex.Message}");
-                }
-                catch (Exception ex)
-                {
-                    await Logger.Log(_fullname, $"An error occurred in ClosedTicket: {ex.Message}");
-                }
-            }, cts.Token);
-        }
-        private async Task ConnectDependenciesToDatabase()
-        {
-            _connection_string= ConfigurationManager.ConnectionStrings["ServiceDesk"].ConnectionString;
-            await Task.Delay(1000);
-            _tableDependency_Ticket ??= new SqlTableDependency<TicketTable>(_connection_string, "Ticket");
-            await Task.Delay(1000);
-            _tableDependency_Status ??= new SqlTableDependency<StatusTable>(_connection_string, "Status");
-            await Task.Delay(1000);
-            _tableDependency_Rating ??= new SqlTableDependency<RatingTable>(_connection_string, "Rating");
-        }
-        private async Task TicketTableDependency(CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            // Ensure the previous instance is disposed before creating a new one
-            _tableDependency_Ticket?.Stop();
-            _tableDependency_Ticket?.Dispose();
-
-            if (_tableDependency_Ticket != null)
-            {
-                _tableDependency_Ticket.OnChanged += TableDependency_Ticket_OnChanged;
-                _tableDependency_Ticket.OnError += TableDependency_OnError;
-                _tableDependency_Ticket.Start();
-            }
-
-            await Task.Delay(1000, cancellationToken); // Simulate work
-        }
-        private async Task StatusTableDependency(CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            // Ensure the previous instance is disposed before creating a new one
-            _tableDependency_Status?.Stop();
-            _tableDependency_Status?.Dispose();
-
-            if (_tableDependency_Status != null)
-            {
-                _tableDependency_Status.OnChanged += TableDependency_Status_OnChanged;
-                _tableDependency_Status.OnError += TableDependency_OnError;
-                _tableDependency_Status.Start();
-            }
-            await Task.Delay(1000, cancellationToken); // Simulate work
-        }
-        private async Task RatingTableDependency(CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            // Ensure the previous instance is disposed before creating a new one
-            _tableDependency_Rating?.Stop();
-            _tableDependency_Rating?.Dispose();
-
-            if (_tableDependency_Rating != null)
-            {
-                _tableDependency_Rating.OnChanged += TableDependency_Rating_OnChanged;
-                _tableDependency_Rating.OnError += TableDependency_OnError;
-                _tableDependency_Rating.Start();
-            }
-            await Task.Delay(1000, cancellationToken); // Simulate work
-        }
-        private async Task StopTableDependencyAsync()
-        {
-            try
-            {
-                if (_cancellationTokenSource != null && !_cancellationTokenSource.IsCancellationRequested)
-                {
-                    _cancellationTokenSource.Cancel();
-                }
-
-                // Stop and dispose table dependencies
-                _tableDependency_Rating?.Stop();
-                _tableDependency_Rating?.Dispose();
-                _tableDependency_Rating = null;
-
-                _tableDependency_Status?.Stop();
-                _tableDependency_Status?.Dispose();
-                _tableDependency_Status = null;
-
-                _tableDependency_Ticket?.Stop();
-                _tableDependency_Ticket?.Dispose();
-                _tableDependency_Ticket = null;
-            }
-            catch (Exception ex)
-            {
-                Notifications.Error(ex.Message, "Error occurred while stopping table dependencies");
-                await Logger.Log(_fullname, $"Error occurred in DashboardForAdminPanel while stopping table dependencies in ClosedTicketForAdminPanel. Error: {ex.Message}");
-            }
-            finally
-            {
-                _cancellationTokenSource?.Dispose();
-                _cancellationTokenSource = new CancellationTokenSource();
             }
         }
         #endregion

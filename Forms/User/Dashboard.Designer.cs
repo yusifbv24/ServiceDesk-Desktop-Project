@@ -800,7 +800,6 @@
             this.Name = "Dashboard";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "Dashboard";
-            this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.Dashboard_FormClosing);
             this.panelCSAT.ResumeLayout(false);
             this.panelCSAT.PerformLayout();
             this.panelTicketSolvers.ResumeLayout(false);
