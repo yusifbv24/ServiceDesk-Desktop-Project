@@ -67,9 +67,10 @@ namespace ServiceDesk.Forms
                  INNER JOIN Ticket WITH (NOLOCK) ON Rating.ID = Ticket.ID 
                  INNER JOIN Status WITH (NOLOCK) ON Status.ID = Ticket.ID 
                  WHERE (Status.status='closed' OR Status.status='resolved') ";
+
             if (!string.IsNullOrEmpty(_mainMenu.fromDate) && !string.IsNullOrEmpty(_mainMenu.toDate))
             {
-                query += " AND Status.time BETWEEN @fromDate AND @toDate";
+                query += " AND (Status.time BETWEEN @fromDate AND @toDate)";
             }
             if (!string.IsNullOrEmpty(_mainMenu.txtSearch.Text))
             {
@@ -102,26 +103,24 @@ namespace ServiceDesk.Forms
                 {
                     cm.Parameters.AddWithValue("@searchText", $"%{_mainMenu.txtSearch.Text}%");
                 }
-                using (var dr = await cm.ExecuteReaderAsync())
+                using var dr = await cm.ExecuteReaderAsync();
+                while (await dr.ReadAsync())
                 {
-                    while (await dr.ReadAsync())
-                    {
-                        dgvTicket.Rows.Add(
-                            dr["ID"].ToString(),
-                            dr["code"].ToString(),
-                            dr["dep_name"].ToString(),
-                            dr["worker"].ToString(),
-                            dr["device"].ToString(),
-                            dr["task"].ToString(),
-                            dr["solution"].ToString(),
-                            dr["creation_date"].ToString(),
-                            dr["finished_time"].ToString(),
-                            RemoveStringFromTime(dr["taken_time"].ToString()),
-                            dr["fullname"].ToString(),
-                            dr["rating"].ToString(),
-                            dr["message"].ToString()
-                    );
-                    }
+                    dgvTicket.Rows.Add(
+                        dr["ID"].ToString(),
+                        dr["code"].ToString(),
+                        dr["dep_name"].ToString(),
+                        dr["worker"].ToString(),
+                        dr["device"].ToString(),
+                        dr["task"].ToString(),
+                        dr["solution"].ToString(),
+                        dr["creation_date"].ToString(),
+                        dr["finished_time"].ToString(),
+                        RemoveStringFromTime(dr["taken_time"].ToString()),
+                        dr["fullname"].ToString(),
+                        dr["rating"].ToString(),
+                        dr["message"].ToString()
+                );
                 }
             }
             catch (InvalidOperationException ex)

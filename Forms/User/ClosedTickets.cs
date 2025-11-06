@@ -8,7 +8,6 @@ using TableDependency.SqlClient.Base.EventArgs;
 using static ServiceDesk.Class.TableDependencies;
 using TableDependency.SqlClient.Base.Enums;
 using System.Data;
-using System.Data.Common;
 using System.Threading;
 using System.Configuration;
 
@@ -57,14 +56,19 @@ namespace ServiceDesk.Forms
             }
         }
         public async Task LoadTickets()
-        {
+       {
             dgvTicket.Visible = true;
             dgvTicket.Rows.Clear();
-            string query = @"SELECT Ticket.ID,code,dep_name,worker,device,task,solution,finished_time,taken_time
+            string query = @"SELECT Ticket.ID,code,dep_name,worker,device,task,solution,finished_time,taken_time,fullname
                                 FROM Ticket
                                 INNER JOIN Status WITH (NOLOCK) ON Ticket.ID = Status.ID 
-                                WHERE ((Status.status='closed' OR Status.status='resolved')
-                                AND Status.time BETWEEN @fromDate AND @toDate AND fullname LIKE @fullname) ";
+                                WHERE (Status.status='closed' OR Status.status='resolved') ";
+
+            if (!string.IsNullOrEmpty(_mainMenu.fromDate) && !string.IsNullOrEmpty(_mainMenu.toDate))
+            {
+                query += " AND (Status.time BETWEEN @fromDate AND @toDate) ";
+            }
+
             if (!string.IsNullOrEmpty(_mainMenu.txtSearch.Text))
             {
                 query += @" AND (Ticket.ID LIKE @searchText 
@@ -75,9 +79,10 @@ namespace ServiceDesk.Forms
                                OR task LIKE @searchText 
                                OR solution LIKE @searchText 
                                OR finished_time LIKE @searchText 
-                               OR taken_time LIKE @searchText) ";
+                               OR fullname LIKE @searchText
+                               OR taken_time LIKE @searchText ) ";
             }
-            query += " ORDER BY Status.ID DESC; ";
+            query += " ORDER BY Ticket.finished_time DESC";
             try
             {
                 if (_connection == null || _connection.State == ConnectionState.Closed)
@@ -87,7 +92,6 @@ namespace ServiceDesk.Forms
                 using SqlCommand cm = new(query, _connection);
                 cm.Parameters.AddWithValue("@fromDate", _mainMenu.fromDate);
                 cm.Parameters.AddWithValue("@toDate", _mainMenu.toDate);
-                cm.Parameters.AddWithValue("@fullname", $"%{_fullname}%");
                 //Add search parameter only if searchText is not empty
                 if (!string.IsNullOrEmpty(_mainMenu.txtSearch.Text))
                 {
@@ -104,7 +108,8 @@ namespace ServiceDesk.Forms
                         dr["device"].ToString(),
                         dr["task"].ToString(),
                         dr["solution"].ToString(),
-                        $"{dr["finished_time"]} / {RemoveStringFromTime(dr["taken_time"].ToString())}");
+                        $"{dr["finished_time"]} / {RemoveStringFromTime(dr["taken_time"].ToString())}",
+                        dr["fullname"].ToString());
                 }
             }
             catch (InvalidOperationException ex)
