@@ -5,9 +5,6 @@ using System.Net.NetworkInformation;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ServiceDesk.Class;
-using TableDependency.SqlClient;
-using TableDependency.SqlClient.Base.EventArgs;
-using TableDependency.SqlClient.Base.Enums;
 using System.Data;
 using System.Data.Common;
 using System.Threading;
@@ -22,14 +19,29 @@ namespace ServiceDesk.Forms
         private Main _mainMenu;
         private SqlConnection _connection { get; set; } = null;
         private static string _connection_string { get; set; } = null;
+
+        // Our in-memory storage for all user data
+        // This will hold every user record so we can filter it quickly
+        private DataTable _allUsersData;
+
+        // The debounce timer that prevents searching on every keystroke
+        private System.Windows.Forms.Timer _searchDebounceTimer;
+
         public Users(string fullname, Main mainMenu, out Users users)
         {
             InitializeComponent();
             _fullname = fullname;
             _mainMenu = mainMenu;
             users = this;
-            _=LoadUsers();
+
+            // Set up the debounce timer with a 300ms delay
+            _searchDebounceTimer = new System.Windows.Forms.Timer();
+            _searchDebounceTimer.Interval = 300;
+            _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
+
+            _ = LoadUsers();
         }
+
         private async Task ConnectToTheDatabase()
         {
             if (_connection == null)
@@ -42,60 +54,79 @@ namespace ServiceDesk.Forms
                 await _connection.OpenAsync();
             }
         }
+
         private string ChangeBooleanToString(bool status)
         {
             return status == true ? "online" : "offline";
         }
+
+        /// <summary>
+        /// Loads all users from the database and stores them in memory.
+        /// Notice we're joining the Users table with UserSessions to get the online status,
+        /// but we're NOT filtering by search text in the SQL query.
+        /// </summary>
         public async Task LoadUsers()
         {
             dgvUser.Rows.Clear();
-            string query = @"
-                            SELECT 
-                            Users.ID,
-                            Users.fullname,
-                            Users.type,
-                            Users.session,
-                            Users.ip_address,
-                            UserSessions.LastActivity,
-                            COALESCE(UserSessions.IsActive, 0) AS IsActive
-                        FROM 
-                            Users
-                        LEFT JOIN 
-                            UserSessions ON UserSessions.UserId = Users.fullname;";
-            // Add search conditions only if searchText is not empty
-            if (!string.IsNullOrEmpty(_mainMenu.txtSearch.Text))
+
+            // Initialize the DataTable structure to match our user data
+            if (_allUsersData == null)
             {
-                query += @" WHERE 
-                     fullname LIKE @searchText 
-                     OR type LIKE @searchText
-                     OR session LIKE @searchText
-                     OR ip_address LIKE @searchText 
-                     OR LastActivity LIKE @searchText";
+                _allUsersData = new DataTable();
+                _allUsersData.Columns.Add("ID", typeof(string));
+                _allUsersData.Columns.Add("fullname", typeof(string));
+                _allUsersData.Columns.Add("type", typeof(string));
+                _allUsersData.Columns.Add("IsActive", typeof(string));     // "online" or "offline"
+                _allUsersData.Columns.Add("LastActivity", typeof(string));
+                _allUsersData.Columns.Add("session", typeof(string));
+                _allUsersData.Columns.Add("ip_address", typeof(string));
             }
+            else
+            {
+                _allUsersData.Clear();
+            }
+
+            // Load ALL users without any search filter
+            string query = @"
+                SELECT 
+                    Users.ID,
+                    Users.fullname,
+                    Users.type,
+                    Users.session,
+                    Users.ip_address,
+                    UserSessions.LastActivity,
+                    COALESCE(UserSessions.IsActive, 0) AS IsActive
+                FROM 
+                    Users
+                LEFT JOIN 
+                    UserSessions ON UserSessions.UserId = Users.fullname";
+
             try
             {
                 if (_connection == null || _connection.State == ConnectionState.Closed)
                 {
                     await ConnectToTheDatabase();
                 }
+
                 using var cm = new SqlCommand(query, _connection);
-                // Add search parameter only if searchText is not empty
-                if (!string.IsNullOrEmpty(_mainMenu.txtSearch.Text))
-                {
-                    cm.Parameters.AddWithValue("@searchText", $"%{_mainMenu.txtSearch.Text}%");
-                }
                 using var dr = await cm.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+
+                // Store each user in our in-memory DataTable
                 while (await dr.ReadAsync())
                 {
-                    dgvUser.Rows.Add(
+                    _allUsersData.Rows.Add(
                         dr["ID"].ToString(),
                         dr["fullname"].ToString(),
                         dr["type"].ToString(),
                         ChangeBooleanToString(Convert.ToBoolean(dr["IsActive"])),
                         dr["LastActivity"].ToString(),
                         dr["session"].ToString(),
-                        dr["ip_address"].ToString());
+                        dr["ip_address"].ToString()
+                    );
                 }
+
+                // Display all data initially (or apply existing search filter)
+                ApplyLocalFilter(_mainMenu.txtSearch.Text);
             }
             catch (InvalidOperationException ex)
             {
@@ -106,11 +137,94 @@ namespace ServiceDesk.Forms
                 Notifications.Error($"{ex.Message}", "Error occured while loading users");
                 await Logger.Log(_fullname, $" | Error occured when loading users in User Panel. | Error is: {ex.Message}");
             }
-            finally
-            {
-                _mainMenu.lblTotalResult.Text = dgvUser.Rows.Count.ToString();
-            }
         }
+
+        /// <summary>
+        /// Filters the user data that's already in memory based on the search text.
+        /// This searches across ALL columns - fullname, type, session, IP address, and last activity.
+        /// Because we're searching in-memory data, this is extremely fast even with thousands of users.
+        /// </summary>
+        private void ApplyLocalFilter(string searchText)
+        {
+            if (_allUsersData == null || _allUsersData.Rows.Count == 0)
+            {
+                _mainMenu.lblTotalResult.Text = "0";
+                return;
+            }
+
+            dgvUser.Rows.Clear();
+            DataRow[] filteredRows;
+
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                // No search - show all users
+                filteredRows = _allUsersData.Select();
+            }
+            else
+            {
+                // Build a filter that searches across all user-visible columns
+                // Notice we search in fullname, type, status, session, IP, and last activity
+                string filterExpression = $@"
+                    fullname LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                    type LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                    IsActive LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                    session LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                    ip_address LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                    LastActivity LIKE '%{EscapeFilterValue(searchText)}%'";
+
+                filteredRows = _allUsersData.Select(filterExpression);
+            }
+
+            // Populate the grid with filtered results
+            foreach (var row in filteredRows)
+            {
+                dgvUser.Rows.Add(
+                    row["ID"],
+                    row["fullname"],
+                    row["type"],
+                    row["IsActive"],
+                    row["LastActivity"],
+                    row["session"],
+                    row["ip_address"]
+                );
+            }
+
+            _mainMenu.lblTotalResult.Text = dgvUser.Rows.Count.ToString();
+        }
+
+        /// <summary>
+        /// Escapes special characters so they don't break the DataTable filter expression
+        /// </summary>
+        private string EscapeFilterValue(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return value;
+            return value.Replace("'", "''").Replace("[", "[[]").Replace("]", "[]]");
+        }
+
+        /// <summary>
+        /// Called by Main.cs when the search text changes.
+        /// Starts the debounce timer to delay the actual search.
+        /// </summary>
+        public void OnSearchTextChanged()
+        {
+            _searchDebounceTimer.Stop();
+            _searchDebounceTimer.Start();
+        }
+
+        /// <summary>
+        /// Fired when the user has stopped typing for 300ms.
+        /// Now we can safely perform the search.
+        /// </summary>
+        private void SearchDebounceTimer_Tick(object sender, EventArgs e)
+        {
+            _searchDebounceTimer.Stop();
+            ApplyLocalFilter(_mainMenu.txtSearch.Text);
+        }
+
+        // All your existing methods remain unchanged
+        // DeleteUser, EditUser, and DgvUser_CellContentClick stay exactly as they were
+
         private async Task DeleteUser(DataGridViewCellEventArgs e)
         {
             string _id = dgvUser.Rows[e.RowIndex].Cells[0].Value.ToString();
@@ -140,6 +254,7 @@ namespace ServiceDesk.Forms
                 await LoadUsers();
             }
         }
+
         private async Task EditUser(DataGridViewCellEventArgs e)
         {
             UserModule userModule = new(_fullname, _mainMenu);
@@ -155,6 +270,7 @@ namespace ServiceDesk.Forms
             userModule.ShowDialog();
             await LoadUsers();
         }
+
         private async void DgvUser_CellContentClick(object sender, DataGridViewCellEventArgs e)
         {
             try

@@ -9,9 +9,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using ServiceDesk.Class;
-using TableDependency.SqlClient;
-using TableDependency.SqlClient.Base.Enums;
-using TableDependency.SqlClient.Base.EventArgs;
 
 namespace ServiceDesk.Forms
 {
@@ -20,15 +17,27 @@ namespace ServiceDesk.Forms
         private Main _mainMenu;
         private readonly string _fullname = default;
         private SqlConnection _connection { get; set; } = null;
-        private static string _connection_string { get; set; } = null;
+        // Store the complete dataset in memory
+        private DataTable _allTicketsData;
+
+        // Debounce timer to avoid searching on every keystroke
+        private System.Windows.Forms.Timer _searchDebounceTimer;
+
         public ClosedTicketsForAdminPanel(string _fullname, Main mainMenu, out ClosedTicketsForAdminPanel closedTickets)
         {
             InitializeComponent();
             closedTickets = this;
             this._fullname = _fullname;
             _mainMenu = mainMenu;
+
+
+            _searchDebounceTimer = new System.Windows.Forms.Timer();
+            _searchDebounceTimer.Interval = 300; // Wait 300ms after user stops typing
+            _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
+
             _ = LoadTickets();
         }
+
         private async Task ConnectToTheDatabase()
         {
             if (_connection == null)
@@ -41,6 +50,8 @@ namespace ServiceDesk.Forms
                 await _connection.OpenAsync();
             }
         }
+
+
         private string RemoveStringFromTime(string text)
         {
             if (text.Contains("ago"))
@@ -51,55 +62,62 @@ namespace ServiceDesk.Forms
             else
                 return text;
         }
+
+        /// <summary>
+        /// Loads tickets from the database once and stores them in memory.
+        /// This is only called when date filters change or on initial load.
+        /// </summary>
         public async Task LoadTickets()
         {
-            dgvTicket.Rows.Clear();
+            try
+            {
+                dgvTicket.Rows.Clear();
 
-            string query = @"SELECT Ticket.*, Rating.rating, Rating.message 
+                // Create a DataTable to hold our results
+                _allTicketsData = new DataTable();
+                _allTicketsData.Columns.Add("ID", typeof(string));
+                _allTicketsData.Columns.Add("code", typeof(string));
+                _allTicketsData.Columns.Add("dep_name", typeof(string));
+                _allTicketsData.Columns.Add("worker", typeof(string));
+                _allTicketsData.Columns.Add("device", typeof(string));
+                _allTicketsData.Columns.Add("task", typeof(string));
+                _allTicketsData.Columns.Add("solution", typeof(string));
+                _allTicketsData.Columns.Add("creation_date", typeof(string));
+                _allTicketsData.Columns.Add("finished_time", typeof(string));
+                _allTicketsData.Columns.Add("taken_time", typeof(string));
+                _allTicketsData.Columns.Add("fullname", typeof(string));
+                _allTicketsData.Columns.Add("rating", typeof(string));
+                _allTicketsData.Columns.Add("message", typeof(string));
+
+                // Query WITHOUT the search text filter - we'll filter in memory
+                string query = @"SELECT Ticket.*, Rating.rating, Rating.message 
                  FROM Rating 
                  INNER JOIN Ticket WITH (NOLOCK) ON Rating.ID = Ticket.ID 
                  INNER JOIN Status WITH (NOLOCK) ON Status.ID = Ticket.ID 
                  WHERE (Status.status='closed' OR Status.status='resolved') ";
 
-            if (!string.IsNullOrEmpty(_mainMenu.fromDate) && !string.IsNullOrEmpty(_mainMenu.toDate))
-            {
-                query += " AND (Status.time BETWEEN @fromDate AND @toDate)";
-            }
-            if (!string.IsNullOrEmpty(_mainMenu.txtSearch.Text))
-            {
-                query += @" AND (Ticket.ID LIKE @searchText 
-                  OR code LIKE @searchText 
-                  OR dep_name LIKE @searchText 
-                  OR worker LIKE @searchText 
-                  OR device LIKE @searchText 
-                  OR task LIKE @searchText 
-                  OR solution LIKE @searchText 
-                  OR creation_date LIKE @searchText 
-                  OR fullname LIKE @searchText 
-                  OR finished_time LIKE @searchText 
-                  OR taken_time LIKE @searchText
-                  OR rating LIKE @searchText
-                  OR message LIKE @searchText )";
-            }
-            query += " ORDER BY Status.ID DESC";
-            try
-            {
+                // Only apply date filters to the database query
+                if (!string.IsNullOrEmpty(_mainMenu.fromDate) && !string.IsNullOrEmpty(_mainMenu.toDate))
+                {
+                    query += " AND (Status.time BETWEEN @fromDate AND @toDate)";
+                }
+
+                query += " ORDER BY Status.ID DESC";
+
                 if (_connection == null || _connection.State == ConnectionState.Closed)
                 {
                     await ConnectToTheDatabase();
                 }
+
                 using SqlCommand cm = new(query, _connection);
                 cm.Parameters.AddWithValue("@fromDate", _mainMenu.fromDate);
                 cm.Parameters.AddWithValue("@toDate", _mainMenu.toDate);
-                // Add search parameter only if searchText is not empty
-                if (!string.IsNullOrEmpty(_mainMenu.txtSearch.Text))
-                {
-                    cm.Parameters.AddWithValue("@searchText", $"%{_mainMenu.txtSearch.Text}%");
-                }
+
                 using var dr = await cm.ExecuteReaderAsync();
                 while (await dr.ReadAsync())
                 {
-                    dgvTicket.Rows.Add(
+                    // Add to our in-memory DataTable
+                    _allTicketsData.Rows.Add(
                         dr["ID"].ToString(),
                         dr["code"].ToString(),
                         dr["dep_name"].ToString(),
@@ -113,8 +131,11 @@ namespace ServiceDesk.Forms
                         dr["fullname"].ToString(),
                         dr["rating"].ToString(),
                         dr["message"].ToString()
-                );
+                    );
                 }
+
+                // Now display the data (initially unfiltered)
+                ApplyLocalFilter("");
             }
             catch (InvalidOperationException ex)
             {
@@ -125,11 +146,111 @@ namespace ServiceDesk.Forms
                 Notifications.Error(ex.Message, "Error occured while loading data");
                 await Logger.Log(_fullname, $" | Error occured in ClosedTicketForAdmin Panel when loading tickets. | Error is: {ex.Message}");
             }
-            finally
-            {
-                _mainMenu.lblTotalResult.Text = dgvTicket.Rows.Count.ToString();
-            }
         }
+
+        /// <summary>
+        /// Filters the already-loaded data based on the search text.
+        /// This is fast because it works entirely in memory.
+        /// </summary>
+        private void ApplyLocalFilter(string searchText)
+        {
+            if (_allTicketsData == null || _allTicketsData.Rows.Count == 0)
+            {
+                _mainMenu.lblTotalResult.Text = "0";
+                return;
+            }
+
+            dgvTicket.Rows.Clear();
+
+            DataRow[] filteredRows;
+
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                // No filter - show all rows
+                filteredRows = _allTicketsData.Select();
+            }
+            else
+            {
+                // Build filter expression for all searchable columns
+                string filterExpression = $@"
+                ID LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                code LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                dep_name LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                worker LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                device LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                task LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                solution LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                creation_date LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                finished_time LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                taken_time LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                fullname LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                rating LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                message LIKE '%{EscapeFilterValue(searchText)}%'";
+
+                filteredRows = _allTicketsData.Select(filterExpression);
+            }
+
+            // Add filtered rows to the grid
+            foreach (var row in filteredRows)
+            {
+                dgvTicket.Rows.Add(
+                    row["ID"],
+                    row["code"],
+                    row["dep_name"],
+                    row["worker"],
+                    row["device"],
+                    row["task"],
+                    row["solution"],
+                    row["creation_date"],
+                    row["finished_time"],
+                    row["taken_time"],
+                    row["fullname"],
+                    row["rating"],
+                    row["message"]
+                );
+            }
+
+            _mainMenu.lblTotalResult.Text = dgvTicket.Rows.Count.ToString();
+        }
+
+
+        /// <summary>
+        /// Escapes special characters in filter values to prevent errors
+        /// </summary>
+        private string EscapeFilterValue(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return value;
+
+            // Escape single quotes and brackets which have special meaning in DataTable filters
+            return value.Replace("'", "''")
+                       .Replace("[", "[[]")
+                       .Replace("]", "[]]")
+                       .Replace("*", "[*]")
+                       .Replace("%", "[%]");
+        }
+
+        /// <summary>
+        /// Called when user changes search text. This triggers the debounce timer
+        /// instead of immediately filtering.
+        /// </summary>
+        public void OnSearchTextChanged()
+        {
+            // Reset the timer - this prevents searching while user is still typing
+            _searchDebounceTimer.Stop();
+            _searchDebounceTimer.Start();
+        }
+
+        /// <summary>
+        /// Timer tick event - user has stopped typing for 300ms, perform the search
+        /// </summary>
+        private void SearchDebounceTimer_Tick(object sender, EventArgs e)
+        {
+            _searchDebounceTimer.Stop();
+            ApplyLocalFilter(_mainMenu.txtSearch.Text);
+        }
+
+
         private float ConvertRatingValue(string value)
         {
             if (float.TryParse(value, out float rating))
@@ -141,6 +262,7 @@ namespace ServiceDesk.Forms
                 return 0; // Default value if parsing fails
             }
         }
+
         private async Task EditingCell(DataGridViewCellEventArgs e)
         {
             var task = dgvTicket.Rows[e.RowIndex].Cells[5].Value.ToString();
@@ -175,6 +297,7 @@ namespace ServiceDesk.Forms
             ticktModule.ShowDialog();
             await LoadTickets();
         }
+
         private async Task EvaluateCell(DataGridViewCellEventArgs e)
         {
             string users = dgvTicket.Rows[e.RowIndex].Cells[10].Value.ToString();
@@ -197,6 +320,7 @@ namespace ServiceDesk.Forms
                 await CalculateRatings(users);
             }
         }
+
         private async Task ResolveCell(DataGridViewCellEventArgs e)
         {
             try
@@ -245,6 +369,7 @@ namespace ServiceDesk.Forms
                 await LoadTickets();
             }
         }
+
         private async Task DeleteCell(DataGridViewCellEventArgs e)
         {
             try
@@ -280,6 +405,7 @@ namespace ServiceDesk.Forms
                 await LoadTickets();
             }
         }
+
         private async void DgvTicket_CellContentClick(object sender, DataGridViewCellEventArgs e)
         {
             try
@@ -327,6 +453,8 @@ namespace ServiceDesk.Forms
                 await Logger.Log(_fullname, $" | Error occured in DgvTicket_CellContentClick when EditClosedTicketsByAdmin items. | Error is: {ex.Message}");
             }
         }
+
+
         #region Calculating CSAT for Each user
         private async Task CalculateRatings(string users)
         {

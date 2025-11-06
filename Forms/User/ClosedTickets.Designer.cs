@@ -44,6 +44,7 @@
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle10 = new System.Windows.Forms.DataGridViewCellStyle();
             System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle11 = new System.Windows.Forms.DataGridViewCellStyle();
             this.dgvTicket = new System.Windows.Forms.DataGridView();
+            this.guna2Elipse_Form = new Guna.UI2.WinForms.Guna2Elipse(this.components);
             this.Code = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.Worker = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.Vendor = new System.Windows.Forms.DataGridViewTextBoxColumn();
@@ -53,7 +54,6 @@
             this.Solution = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.Finished_date = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.Fullname = new System.Windows.Forms.DataGridViewTextBoxColumn();
-            this.guna2Elipse_Form = new Guna.UI2.WinForms.Guna2Elipse(this.components);
             ((System.ComponentModel.ISupportInitialize)(this.dgvTicket)).BeginInit();
             this.SuspendLayout();
             // 
@@ -61,7 +61,6 @@
             // 
             this.dgvTicket.AllowUserToAddRows = false;
             this.dgvTicket.AllowUserToDeleteRows = false;
-            this.dgvTicket.AllowUserToResizeColumns = false;
             dataGridViewCellStyle1.Font = new System.Drawing.Font("Inter", 12F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             dataGridViewCellStyle1.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
             this.dgvTicket.AlternatingRowsDefaultCellStyle = dataGridViewCellStyle1;
@@ -132,17 +131,22 @@
             this.dgvTicket.Size = new System.Drawing.Size(1082, 690);
             this.dgvTicket.TabIndex = 5;
             // 
+            // guna2Elipse_Form
+            // 
+            this.guna2Elipse_Form.BorderRadius = 25;
+            this.guna2Elipse_Form.TargetControl = this;
+            // 
             // Code
             // 
             this.Code.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.AllCells;
             dataGridViewCellStyle3.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
             this.Code.DefaultCellStyle = dataGridViewCellStyle3;
             this.Code.HeaderText = "ID";
-            this.Code.MinimumWidth = 60;
+            this.Code.MinimumWidth = 40;
             this.Code.Name = "Code";
             this.Code.ReadOnly = true;
             this.Code.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.NotSortable;
-            this.Code.Width = 60;
+            this.Code.Width = 40;
             // 
             // Worker
             // 
@@ -162,11 +166,11 @@
             dataGridViewCellStyle5.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
             this.Vendor.DefaultCellStyle = dataGridViewCellStyle5;
             this.Vendor.HeaderText = "Department";
-            this.Vendor.MinimumWidth = 130;
+            this.Vendor.MinimumWidth = 150;
             this.Vendor.Name = "Vendor";
             this.Vendor.ReadOnly = true;
             this.Vendor.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.NotSortable;
-            this.Vendor.Width = 130;
+            this.Vendor.Width = 150;
             // 
             // Model
             // 
@@ -182,11 +186,11 @@
             // 
             // Department
             // 
-            this.Department.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.AllCells;
+            this.Department.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.None;
             dataGridViewCellStyle7.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
             this.Department.DefaultCellStyle = dataGridViewCellStyle7;
             this.Department.HeaderText = "Device";
-            this.Department.MinimumWidth = 80;
+            this.Department.MinimumWidth = 60;
             this.Department.Name = "Department";
             this.Department.ReadOnly = true;
             this.Department.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.NotSortable;
@@ -194,25 +198,27 @@
             // 
             // Tasks
             // 
-            this.Tasks.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.Fill;
+            this.Tasks.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.None;
             dataGridViewCellStyle8.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
             this.Tasks.DefaultCellStyle = dataGridViewCellStyle8;
             this.Tasks.HeaderText = "Task";
-            this.Tasks.MinimumWidth = 180;
+            this.Tasks.MinimumWidth = 150;
             this.Tasks.Name = "Tasks";
             this.Tasks.ReadOnly = true;
             this.Tasks.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.NotSortable;
+            this.Tasks.Width = 200;
             // 
             // Solution
             // 
-            this.Solution.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.Fill;
+            this.Solution.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.None;
             dataGridViewCellStyle9.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
             this.Solution.DefaultCellStyle = dataGridViewCellStyle9;
             this.Solution.HeaderText = "Solution";
-            this.Solution.MinimumWidth = 150;
+            this.Solution.MinimumWidth = 200;
             this.Solution.Name = "Solution";
             this.Solution.ReadOnly = true;
             this.Solution.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.NotSortable;
+            this.Solution.Width = 400;
             // 
             // Finished_date
             // 
@@ -220,7 +226,7 @@
             dataGridViewCellStyle10.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
             this.Finished_date.DefaultCellStyle = dataGridViewCellStyle10;
             this.Finished_date.HeaderText = "Finished Date";
-            this.Finished_date.MinimumWidth = 80;
+            this.Finished_date.MinimumWidth = 120;
             this.Finished_date.Name = "Finished_date";
             this.Finished_date.ReadOnly = true;
             this.Finished_date.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.NotSortable;
@@ -228,20 +234,14 @@
             // 
             // Fullname
             // 
-            this.Fullname.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.AllCells;
+            this.Fullname.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.Fill;
             dataGridViewCellStyle11.WrapMode = System.Windows.Forms.DataGridViewTriState.True;
             this.Fullname.DefaultCellStyle = dataGridViewCellStyle11;
-            this.Fullname.FillWeight = 80F;
             this.Fullname.HeaderText = "Fullname";
+            this.Fullname.MinimumWidth = 20;
             this.Fullname.Name = "Fullname";
             this.Fullname.ReadOnly = true;
             this.Fullname.SortMode = System.Windows.Forms.DataGridViewColumnSortMode.NotSortable;
-            this.Fullname.Width = 83;
-            // 
-            // guna2Elipse_Form
-            // 
-            this.guna2Elipse_Form.BorderRadius = 25;
-            this.guna2Elipse_Form.TargetControl = this;
             // 
             // ClosedTickets
             // 

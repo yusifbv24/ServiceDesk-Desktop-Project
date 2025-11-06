@@ -5,9 +5,6 @@ using System.Data.SqlClient;
 using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using TableDependency.SqlClient.Base.Enums;
-using TableDependency.SqlClient.Base.EventArgs;
-using TableDependency.SqlClient;
 using System.Data;
 using System.Data.Common;
 using System.Threading;
@@ -19,14 +16,21 @@ namespace ServiceDesk.Forms
     {
         private Main _mainMenu;
         private readonly string _fullname = default;
-        private static string _connection_string { get; set; } = null;
         private SqlConnection _connection { get; set; } = null;
-        public OpenedTickets(string _fullname, Main mainMenu,out OpenedTickets form)
+        private DataTable _allTicketsData;
+        private System.Windows.Forms.Timer _searchDebounceTimer;
+
+        public OpenedTickets(string _fullname, Main mainMenu, out OpenedTickets form)
         {
             InitializeComponent();
             _mainMenu = mainMenu;
             form = this;
             this._fullname = _fullname;
+
+            _searchDebounceTimer = new System.Windows.Forms.Timer();
+            _searchDebounceTimer.Interval = 300;
+            _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
+
             _ = LoadTickets();
         }
         private async Task ConnectToTheDatabase()
@@ -74,39 +78,45 @@ namespace ServiceDesk.Forms
         public async Task LoadTickets()
         {
             dgvTask.Rows.Clear();
-            string query = @"SELECT Ticket.ID,code,dep_name,worker,device,task,solution,creation_date FROM Ticket 
-                            INNER JOIN Status WITH (NOLOCK) ON Status.ID=Ticket.ID
-							WHERE ((Status.status='pending' OR Status.status='resolving')
-                            AND fullname LIKE @fullname) ";
-            if (!string.IsNullOrEmpty(_mainMenu.txtSearch.Text))
+
+            if (_allTicketsData == null)
             {
-                query += @" AND (Ticket.ID LIKE @searchText 
-                     OR code LIKE @searchText 
-                     OR dep_name LIKE @searchText 
-                     OR worker LIKE @searchText 
-                     OR device LIKE @searchText 
-                     OR task LIKE @searchText 
-                     OR solution LIKE @searchText 
-                     OR creation_date LIKE @searchText ) ";
+                _allTicketsData = new DataTable();
+                _allTicketsData.Columns.Add("ID", typeof(string));
+                _allTicketsData.Columns.Add("code", typeof(string));
+                _allTicketsData.Columns.Add("dep_name", typeof(string));
+                _allTicketsData.Columns.Add("worker", typeof(string));
+                _allTicketsData.Columns.Add("device", typeof(string));
+                _allTicketsData.Columns.Add("task", typeof(string));
+                _allTicketsData.Columns.Add("solution", typeof(string));
+                _allTicketsData.Columns.Add("creation_date", typeof(string));
+                _allTicketsData.Columns.Add("time_elapsed", typeof(string));
             }
-            query += " ORDER BY Ticket.creation_date DESC, Ticket.ID DESC";
+            else
+            {
+                _allTicketsData.Clear();
+            }
+
+            string query = @"SELECT Ticket.ID,code,dep_name,worker,device,task,solution,creation_date FROM Ticket 
+                        INNER JOIN Status WITH (NOLOCK) ON Status.ID=Ticket.ID
+                        WHERE ((Status.status='pending' OR Status.status='resolving')
+                        AND fullname LIKE @fullname)
+                        ORDER BY Ticket.creation_date DESC, Ticket.ID DESC";
+
             try
             {
                 if (_connection == null || _connection.State == ConnectionState.Closed)
                 {
                     await ConnectToTheDatabase();
                 }
+
                 using var cm = new SqlCommand(query, _connection);
                 cm.Parameters.AddWithValue("@fullname", $"%{_fullname}%");
-                // Add search parameter only if searchText is not empty
-                if (!string.IsNullOrEmpty(_mainMenu.txtSearch.Text))
-                {
-                    cm.Parameters.AddWithValue("@searchText", $"%{_mainMenu.txtSearch.Text}%");
-                }
                 using var dr = await cm.ExecuteReaderAsync();
+
                 while (await dr.ReadAsync())
                 {
-                    dgvTask.Rows.Add(
+                    _allTicketsData.Rows.Add(
                         dr["ID"].ToString(),
                         dr["code"].ToString(),
                         dr["dep_name"].ToString(),
@@ -115,8 +125,11 @@ namespace ServiceDesk.Forms
                         dr["task"].ToString(),
                         dr["solution"].ToString(),
                         dr["creation_date"].ToString(),
-                        CalculateTime(DateTime.Parse(dr["creation_date"].ToString())));
+                        CalculateTime(DateTime.Parse(dr["creation_date"].ToString()))
+                    );
                 }
+
+                ApplyLocalFilter("");
             }
             catch (InvalidOperationException ex)
             {
@@ -127,11 +140,75 @@ namespace ServiceDesk.Forms
                 Notifications.Error($"{ex.Message}", "Error occured while loading tickets");
                 await Logger.Log(_fullname, $" | Error occured in OpenedTicket Panel when loading tickets. | Error is: {ex.Message}");
             }
-            finally
-            {
-                _mainMenu.lblTotalResult.Text= dgvTask.Rows.Count.ToString();
-            }
         }
+
+        private void ApplyLocalFilter(string searchText)
+        {
+            if (_allTicketsData == null || _allTicketsData.Rows.Count == 0)
+            {
+                _mainMenu.lblTotalResult.Text = "0";
+                return;
+            }
+
+            dgvTask.Rows.Clear();
+            DataRow[] filteredRows;
+
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                filteredRows = _allTicketsData.Select();
+            }
+            else
+            {
+                string filterExpression = $@"
+                ID LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                code LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                dep_name LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                worker LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                device LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                task LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                solution LIKE '%{EscapeFilterValue(searchText)}%' OR 
+                creation_date LIKE '%{EscapeFilterValue(searchText)}%'";
+
+                filteredRows = _allTicketsData.Select(filterExpression);
+            }
+
+            foreach (var row in filteredRows)
+            {
+                dgvTask.Rows.Add(
+                    row["ID"],
+                    row["code"],
+                    row["dep_name"],
+                    row["worker"],
+                    row["device"],
+                    row["task"],
+                    row["solution"],
+                    row["creation_date"],
+                    row["time_elapsed"]
+                );
+            }
+
+            _mainMenu.lblTotalResult.Text = dgvTask.Rows.Count.ToString();
+        }
+
+        private string EscapeFilterValue(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return value;
+            return value.Replace("'", "''").Replace("[", "[[]").Replace("]", "[]]");
+        }
+
+        public void OnSearchTextChanged()
+        {
+            _searchDebounceTimer.Stop();
+            _searchDebounceTimer.Start();
+        }
+
+        private void SearchDebounceTimer_Tick(object sender, EventArgs e)
+        {
+            _searchDebounceTimer.Stop();
+            ApplyLocalFilter(_mainMenu.txtSearch.Text);
+        }
+
         private async Task EditingCell(DataGridViewCellEventArgs e)
         {
             var problems = dgvTask.Rows[e.RowIndex].Cells[5].Value.ToString();

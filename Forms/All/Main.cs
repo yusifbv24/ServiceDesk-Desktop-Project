@@ -118,11 +118,38 @@ namespace ServiceDesk.Forms
         {
             await OpeningDashboardForm();
         }
-        private void BtnOk_Click(object sender, EventArgs e)
+        private async void BtnOk_Click(object sender, EventArgs e)
         {
             panelFilter.Visible = false;
             btnFilter.Image = btnFilter.PressedState.Image;
-            TxtSearch_TextChanged(sender, e);
+
+            // Date filters changed - reload from database
+            LoadDates();
+
+            if (lblHome.Text == _titleForForms["ClosedTicketForUser"])
+            {
+                await _closedTicketsForUser?.LoadTickets(); // Full reload
+            }
+            else if (lblHome.Text == _titleForForms["ClosedTicketForAdmin"])
+            {
+                await _closedTicketsForAdmin?.LoadTickets(); // Full reload
+            }
+            else if (lblHome.Text == _titleForForms["OpenTicketsForAdmin"])
+            {
+                await _openedTicketsForAdmin.LoadTickets();
+            }
+            else if (lblHome.Text == _titleForForms["OpenTicketsForUser"])
+            {
+                await _openedTicketsForUser.LoadTickets();
+            }
+            else if (lblHome.Text == _titleForForms["Problems"])
+            {
+                await _problems.LoadTasks();
+            }
+            else if (lblHome.Text == _titleForForms["Users"])
+            {
+                await _users.LoadUsers();
+            }
         }
         private void BtnFilter_Click(object sender, EventArgs e)
         {
@@ -140,53 +167,57 @@ namespace ServiceDesk.Forms
         private async void TxtSearch_TextChanged(object sender, EventArgs e)
         {
             LoadDates();
+
+            // Instead of calling LoadTickets() which hits the database,
+            // call the new OnSearchTextChanged() which filters locally
+
             if (lblHome.Text == _titleForForms["OpenTicketsForUser"])
             {
-                await _openedTicketsForUser.LoadTickets();
+                _openedTicketsForUser?.OnSearchTextChanged();
             }
-            if (lblHome.Text == _titleForForms["OpenTicketsForAdmin"])
+            else if (lblHome.Text == _titleForForms["OpenTicketsForAdmin"])
             {
-                await _openedTicketsForAdmin.LoadTickets();
+                _openedTicketsForAdmin?.OnSearchTextChanged();
             }
-            if (lblHome.Text == _titleForForms["ClosedTicketForUser"])
+            else if (lblHome.Text == _titleForForms["ClosedTicketForUser"])
             {
                 if (_closedTicketsForUser == null || _closedTicketsForUser.IsDisposed)
                 {
                     await OpenChildForm(new ClosedTickets(_fullname, this, out _closedTicketsForUser));
                 }
-                await _closedTicketsForUser.LoadTickets();
+                _closedTicketsForUser?.OnSearchTextChanged();
             }
-            if (lblHome.Text == _titleForForms["ClosedTicketForAdmin"])
+            else if (lblHome.Text == _titleForForms["ClosedTicketForAdmin"])
             {
                 if (_closedTicketsForAdmin == null || _closedTicketsForAdmin.IsDisposed)
                 {
                     await OpenChildForm(new ClosedTicketsForAdminPanel(_fullname, this, out _closedTicketsForAdmin));
                 }
-                await _closedTicketsForAdmin.LoadTickets();
+                _closedTicketsForAdmin?.OnSearchTextChanged();
             }
-            if (lblHome.Text == _titleForForms["FindTickets"])
+            else if (lblHome.Text == _titleForForms["FindTickets"])
             {
                 if (_findTickets == null || _findTickets.IsDisposed)
                 {
                     await OpenChildForm(new FindTickets(_fullname, this, out _findTickets));
                 }
-                await _findTickets.LoadDefaultSettings();
+                _findTickets?.OnSearchTextChanged();
             }
-            if (lblHome.Text == _titleForForms["Problems"])
+            else if (lblHome.Text == _titleForForms["Problems"])
             {
                 if (_problems == null || _problems.IsDisposed)
                 {
                     await OpenChildForm(new Tasks(_fullname, this, out _problems));
                 }
-                await _problems.LoadTasks();
+                _problems?.OnSearchTextChanged();
             }
-            if (lblHome.Text == _titleForForms["Users"])
+            else if (lblHome.Text == _titleForForms["Users"])
             {
                 if (_users == null || _users.IsDisposed)
                 {
                     await OpenChildForm(new Users(_fullname, this, out _users));
                 }
-                await _users.LoadUsers();
+                _users?.OnSearchTextChanged();
             }
         }
         #endregion
